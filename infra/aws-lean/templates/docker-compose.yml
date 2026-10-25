@@ -1,0 +1,84 @@
+# Lean production stack for a 1 GiB instance. deploy.sh writes .env (from
+# SSM) next to this file; it supplies the ${...} values and app settings.
+name: pdfutils
+
+x-app: &app
+  image: ${IMAGE_REPO}:api-${IMAGE_TAG}
+  restart: unless-stopped
+  env_file: .env
+  environment:
+    APP_ENV: production
+    DATABASE_URL: postgres://pdfutils:${POSTGRES_PASSWORD}@postgres:5432/pdfutils?sslmode=disable
+    REDIS_ADDR: redis:6379
+    PUBLIC_URL: https://${DOMAIN}
+    WEB_URL: https://${DOMAIN}
+    WEB_ORIGINS: https://${DOMAIN}
+    TRUST_PROXY: "true"
+    GOMEMLIMIT: 150MiB # keep Go heaps small; Ghostscript runs as a child process
+  volumes:
+    - /tmp # job scratch on disk, not RAM
+
+services:
+  web:
+    image: ${IMAGE_REPO}:web-${IMAGE_TAG}
+    restart: unless-stopped
+    environment:
+      DOMAIN: ${DOMAIN}
+    ports: ["80:80", "443:443", "443:443/udp"]
+    volumes: [caddy_data:/data, caddy_config:/config]
+    depends_on: [api]
+
+  api:
+    <<: *app
+    command: ["server"]
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_started }
+    healthcheck:
+      # bash, not sh: /dev/tcp is a bash feature (the image's sh is dash)
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/8080 && printf 'GET /healthz HTTP/1.0\\r\\n\\r\\n' >&3 && grep -q ok <&3"]
+      interval: 15s
+      start_period: 30s
+
+  worker:
+    <<: *app
+    command: ["worker"]
+    depends_on:
+      api: { condition: service_healthy } # the api applies migrations
+
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    command:
+      - postgres
+      - -c
+      - shared_buffers=32MB
+      - -c
+      - max_connections=30
+      - -c
+      - work_mem=2MB
+      - -c
+      - maintenance_work_mem=16MB
+      - -c
+      - effective_cache_size=128MB
+    environment:
+      POSTGRES_USER: pdfutils
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: pdfutils
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "pdfutils"]
+      interval: 10s
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    # Queue data must never be evicted; 48 MB is plenty for jobs and rate limits.
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory", "48mb", "--maxmemory-policy", "noeviction"]
+    volumes: [redisdata:/data]
+
+volumes:
+  pgdata:
+  redisdata:
+  caddy_data:
+  caddy_config:

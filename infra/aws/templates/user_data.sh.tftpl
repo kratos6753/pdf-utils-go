@@ -1,0 +1,106 @@
+#!/bin/bash
+# First-boot setup (cloud-init). Installs Docker, mounts the persistent data
+# volume and starts the app; later deploys run /usr/local/bin/pdfutils-deploy.
+set -euxo pipefail
+
+cat > /etc/pdfutils.conf <<CONF
+REGION=${region}
+SSM_PREFIX=${ssm_prefix}
+OPS_BUCKET=${ops_bucket}
+CONF
+
+# Swap absorbs memory spikes from large Ghostscript jobs.
+if [ ! -f /swapfile ]; then
+  fallocate -l 2G /swapfile && chmod 600 /swapfile && mkswap /swapfile
+  echo "/swapfile none swap sw 0 0" >> /etc/fstab
+fi
+swapon -a
+
+# Persistent data volume (Postgres, Redis, TLS certs, Docker). It survives
+# instance replacement; format it only the first time.
+dev=/dev/disk/by-id/nvme-Amazon_Elastic_Block_Store_${volume_id}
+for _ in $(seq 1 120); do [ -e "$dev" ] && break; sleep 5; done
+[ -e "$dev" ]
+blkid "$dev" || mkfs.xfs -L pdfutils-data "$dev"
+mkdir -p /data
+uuid=$(blkid -s UUID -o value "$dev")
+grep -q "$uuid" /etc/fstab || echo "UUID=$uuid /data xfs defaults,nofail 0 2" >> /etc/fstab
+mount -a
+
+# Docker with its data root on the persistent volume.
+dnf install -y docker
+mkdir -p /etc/docker /data/docker
+cat > /etc/docker/daemon.json <<'JSON'
+{ "data-root": "/data/docker", "log-driver": "local" }
+JSON
+arch=$(uname -m)
+case "$arch" in
+  aarch64) sum=0c4591cf3b1ed039adcd803dbbeddf757375fc08c11245b0154135f838495a2f ;;
+  x86_64)  sum=ed1917fb54db184192ea9d0717bcd59e3662ea79db48bff36d3475516c480a6b ;;
+esac
+mkdir -p /usr/local/lib/docker/cli-plugins
+curl -fsSL -o /usr/local/lib/docker/cli-plugins/docker-compose \
+  "https://github.com/docker/compose/releases/download/v2.32.4/docker-compose-linux-$arch"
+echo "$sum  /usr/local/lib/docker/cli-plugins/docker-compose" | sha256sum -c -
+chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
+systemctl enable --now docker
+
+# Deploy entrypoint: fetch the latest scripts from S3, then run deploy.sh.
+mkdir -p /opt/pdfutils
+cat > /usr/local/bin/pdfutils-deploy <<'SH'
+#!/bin/bash
+set -euo pipefail
+source /etc/pdfutils.conf
+export AWS_DEFAULT_REGION=$REGION
+for f in deploy.sh backup.sh; do
+  aws s3 cp "s3://$OPS_BUCKET/deploy/$f" "/opt/pdfutils/$f" --only-show-errors
+  chmod +x "/opt/pdfutils/$f"
+done
+exec /opt/pdfutils/deploy.sh
+SH
+chmod +x /usr/local/bin/pdfutils-deploy
+
+cat > /etc/systemd/system/pdfutils.service <<'UNIT'
+[Unit]
+Description=Deploy PDF Utils (refresh config and images, start containers)
+After=docker.service network-online.target
+Wants=network-online.target
+Requires=docker.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/bin/pdfutils-deploy
+TimeoutStartSec=900
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+
+cat > /etc/systemd/system/pdfutils-backup.service <<'UNIT'
+[Unit]
+Description=Back up Postgres to S3
+After=pdfutils.service
+
+[Service]
+Type=oneshot
+ExecStart=/opt/pdfutils/backup.sh
+UNIT
+
+cat > /etc/systemd/system/pdfutils-backup.timer <<'UNIT'
+[Unit]
+Description=Nightly Postgres backup
+
+[Timer]
+OnCalendar=*-*-* 03:00:00 UTC
+Persistent=true
+RandomizedDelaySec=15m
+
+[Install]
+WantedBy=timers.target
+UNIT
+
+systemctl daemon-reload
+systemctl enable pdfutils.service pdfutils-backup.timer
+systemctl start pdfutils-backup.timer
+systemctl start pdfutils.service

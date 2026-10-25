@@ -1,0 +1,84 @@
+# Production stack on the EC2 instance. deploy.sh writes .env (from SSM) next
+# to this file; it supplies both ${...} values below and the app's settings.
+name: pdfutils
+
+x-logging: &logging
+  driver: awslogs
+  options:
+    awslogs-region: ${AWS_REGION}
+    awslogs-group: ${LOG_GROUP}
+    tag: "{{.Name}}"
+
+x-app: &app
+  image: ${REGISTRY}/pdfutils/api:${IMAGE_TAG}
+  restart: unless-stopped
+  env_file: .env
+  environment:
+    APP_ENV: production
+    DATABASE_URL: postgres://pdfutils:${POSTGRES_PASSWORD}@postgres:5432/pdfutils?sslmode=disable
+    REDIS_ADDR: redis:6379
+    PUBLIC_URL: https://${DOMAIN}
+    WEB_URL: https://${DOMAIN}
+    WEB_ORIGINS: https://${DOMAIN}
+    TRUST_PROXY: "true"
+  volumes:
+    - /tmp # job scratch space on the data disk, not in RAM
+  logging: *logging
+
+services:
+  web:
+    image: ${REGISTRY}/pdfutils/web:${IMAGE_TAG}
+    restart: unless-stopped
+    environment:
+      DOMAIN: ${DOMAIN}
+    ports: ["80:80", "443:443", "443:443/udp"]
+    volumes: [caddy_data:/data, caddy_config:/config]
+    depends_on: [api]
+    logging: *logging
+
+  api:
+    <<: *app
+    command: ["server"]
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_started }
+    healthcheck:
+      # bash, not sh: /dev/tcp is a bash feature (the image's sh is dash)
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/8080 && printf 'GET /healthz HTTP/1.0\\r\\n\\r\\n' >&3 && grep -q ok <&3"]
+      interval: 10s
+      start_period: 20s
+
+  worker:
+    <<: *app
+    command: ["worker"]
+    depends_on:
+      api: { condition: service_healthy } # the api applies migrations
+    deploy:
+      replicas: ${WORKER_REPLICAS:-2}
+
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: pdfutils
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: pdfutils
+    shm_size: 256mb
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "pdfutils"]
+      interval: 5s
+    logging: *logging
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes: [redisdata:/data]
+    logging: *logging
+
+volumes:
+  pgdata:
+  redisdata:
+  caddy_data:
+  caddy_config:

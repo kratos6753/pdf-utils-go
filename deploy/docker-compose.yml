@@ -1,0 +1,62 @@
+# Production stack for a single VPS:  cp .env.prod.example .env && docker compose up -d --build
+name: pdfutils
+x-app: &app
+  build: ../backend
+  image: pdfutils-api
+  restart: unless-stopped
+  env_file: .env
+  environment:
+    APP_ENV: production
+    DATABASE_URL: postgres://pdfutils:${POSTGRES_PASSWORD}@postgres:5432/pdfutils?sslmode=disable
+    REDIS_ADDR: redis:6379
+    PUBLIC_URL: https://${DOMAIN}
+    WEB_URL: https://${DOMAIN}
+    WEB_ORIGINS: https://${DOMAIN}
+    TRUST_PROXY: "true"
+  tmpfs: [/tmp:size=4g]
+
+services:
+  web:
+    build: { context: .., dockerfile: deploy/web.Dockerfile }
+    restart: unless-stopped
+    environment: { DOMAIN: "${DOMAIN}" }
+    ports: ["80:80", "443:443", "443:443/udp"]
+    volumes: [caddy_data:/data, caddy_config:/config]
+    depends_on: [api]
+  api:
+    <<: *app
+    command: ["server"]
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_started }
+    healthcheck:
+      # bash, not sh: /dev/tcp is a bash feature (the image's sh is dash)
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/8080 && printf 'GET /healthz HTTP/1.0\\r\\n\\r\\n' >&3 && grep -q ok <&3"]
+      interval: 10s
+  worker:
+    <<: *app
+    command: ["worker"]
+    depends_on:
+      api: { condition: service_healthy } # api runs migrations
+    deploy: { replicas: 2 }
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: pdfutils
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: pdfutils
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "pdfutils"]
+      interval: 5s
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes: [redisdata:/data]
+volumes:
+  pgdata:
+  redisdata:
+  caddy_data:
+  caddy_config:

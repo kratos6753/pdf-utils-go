@@ -1,0 +1,27 @@
+# Local infrastructure for development: run the API/worker with `go run` and the web app with `npm run dev`.
+name: pdfutils-dev
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: pdfutils
+      POSTGRES_PASSWORD: pdfutils
+      POSTGRES_DB: pdfutils
+    ports: ["5432:5432"]
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "pdfutils"]
+      interval: 2s
+      retries: 30
+  redis:
+    image: redis:7-alpine
+    ports: ["6379:6379"]
+  # S3-compatible object storage (stand-in for AWS S3 / Cloudflare R2 in dev).
+  s3:
+    image: chrislusf/seaweedfs:4.48
+    command: server -dir=/data -s3 -s3.port=8333 -master.volumeSizeLimitMB=1024
+    ports: ["8333:8333"]
+    volumes: [s3data:/data]
+volumes:
+  pgdata:
+  s3data:

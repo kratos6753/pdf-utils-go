@@ -1,0 +1,135 @@
+name: CI
+on:
+  push: { branches: [main] }
+  pull_request:
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    defaults: { run: { working-directory: backend } }
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env: { POSTGRES_USER: pdfutils, POSTGRES_PASSWORD: pdfutils, POSTGRES_DB: pdfutils }
+        ports: ["5432:5432"]
+        options: --health-cmd "pg_isready -U pdfutils" --health-interval 2s --health-retries 30
+      redis:
+        image: redis:7-alpine
+        ports: ["6379:6379"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with: { go-version-file: backend/go.mod }
+      - run: sudo apt-get update && sudo apt-get install -y ghostscript qpdf
+      - run: test -z "$(gofmt -l .)"
+      - run: go vet ./...
+      - run: go test ./...
+      - name: End-to-end API test
+        working-directory: .
+        run: |
+          docker run -d -p 8333:8333 chrislusf/seaweedfs:4.48 server -dir=/data -s3 -s3.port=8333
+          cp backend/.env.example backend/.env
+          set -a; source backend/.env; set +a; export PUBLIC_URL=http://localhost:8080
+          (cd backend && go build -o /tmp/pdfutils ./cmd/pdfutils)
+          for i in $(seq 1 30); do curl -sf localhost:8333 >/dev/null && break; sleep 1; done
+          /tmp/pdfutils server & sleep 3; /tmp/pdfutils worker &
+          for i in $(seq 1 30); do curl -sf localhost:8080/readyz && break; sleep 1; done
+          scripts/e2e.sh
+
+  frontend:
+    runs-on: ubuntu-latest
+    defaults: { run: { working-directory: frontend } }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 24, cache: npm, cache-dependency-path: frontend/package-lock.json }
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run build
+
+  images:
+    runs-on: ubuntu-latest
+    needs: [backend, frontend]
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -t pdfutils-api backend
+      - run: docker build -f deploy/web.Dockerfile -t pdfutils-web .
+
+  # Deploys main to the full AWS stack (ECR). Repository variables are written
+  # by Terraform (infra/aws/github.tf); without them this job is skipped.
+  deploy:
+    runs-on: ubuntu-latest
+    needs: [backend, frontend]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.ECR_REGISTRY != ''
+    concurrency: { group: deploy-production, cancel-in-progress: false }
+    environment: { name: production, url: "${{ vars.APP_URL }}" }
+    permissions:
+      id-token: write # OIDC to AWS
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+      - name: Build and push images
+        env:
+          REGISTRY: ${{ vars.ECR_REGISTRY }}
+          PROJECT: ${{ vars.PROJECT }}
+          REGION: ${{ vars.AWS_REGION }}
+          PLATFORM: ${{ vars.IMAGE_PLATFORM }}
+          TAG: git-${{ github.sha }}
+        run: infra/scripts/build-and-push.sh
+      - name: Roll out
+        env:
+          INSTANCE_ID: ${{ vars.INSTANCE_ID }}
+          REGION: ${{ vars.AWS_REGION }}
+          SSM_PREFIX: ${{ vars.SSM_PREFIX }}
+          TAG: git-${{ github.sha }}
+        run: infra/scripts/deploy-remote.sh
+      - name: Smoke test
+        run: |
+          for i in $(seq 1 30); do curl -sf "${{ vars.APP_URL }}/healthz" && exit 0; sleep 5; done
+          exit 1
+
+  # Deploys main to the lean AWS stack (Docker Hub). Variables and the
+  # DOCKERHUB_TOKEN secret are written by infra/aws-lean/github.tf.
+  deploy-lean:
+    runs-on: ubuntu-latest
+    needs: [backend, frontend]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.DOCKERHUB_REPO != ''
+    concurrency: { group: deploy-production, cancel-in-progress: false }
+    environment: { name: production, url: "${{ vars.APP_URL }}" }
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-qemu-action@v3 # only the runtime stage needs it, for arm64 instance types
+      - uses: docker/setup-buildx-action@v3
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+      - name: Build and push images
+        env:
+          IMAGE_REPO: ${{ vars.DOCKERHUB_REPO }}
+          DOCKERHUB_USERNAME: ${{ vars.DOCKERHUB_USERNAME }}
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+          PLATFORM: ${{ vars.IMAGE_PLATFORM }}
+          TAG: git-${{ github.sha }}
+        run: infra/scripts/build-and-push-dockerhub.sh
+      - name: Roll out
+        env:
+          INSTANCE_ID: ${{ vars.INSTANCE_ID }}
+          REGION: ${{ vars.AWS_REGION }}
+          SSM_PREFIX: ${{ vars.SSM_PREFIX }}
+          TAG: git-${{ github.sha }}
+        run: infra/scripts/deploy-remote.sh
+      - name: Smoke test
+        run: |
+          for i in $(seq 1 30); do curl -sf "${{ vars.APP_URL }}/healthz" && exit 0; sleep 5; done
+          exit 1

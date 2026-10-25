@@ -1,0 +1,22 @@
+{
+  "Rules": [
+    {
+      "ID": "expire-anonymous-files",
+      "Filter": { "Prefix": "tmp/" },
+      "Status": "Enabled",
+      "Expiration": { "Days": 1 }
+    },
+    {
+      "ID": "history-to-glacier-instant-retrieval",
+      "Filter": { "Prefix": "users/" },
+      "Status": "Enabled",
+      "Transitions": [{ "Days": 30, "StorageClass": "GLACIER_IR" }]
+    },
+    {
+      "ID": "abort-incomplete-uploads",
+      "Filter": {},
+      "Status": "Enabled",
+      "AbortIncompleteMultipartUpload": { "DaysAfterInitiation": 1 }
+    }
+  ]
+}

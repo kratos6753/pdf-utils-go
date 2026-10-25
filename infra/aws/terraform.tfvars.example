@@ -1,0 +1,21 @@
+# Copy to terraform.tfvars and edit. Only `domain` and `route53_zone` are required.
+
+region       = "us-east-1"
+domain       = "pdf.example.com" # where the app is served
+route53_zone = "example.com"     # hosted zone that contains it
+# create_route53_zone = true     # if the domain is not in Route 53 yet (see README)
+
+alert_email        = "you@example.com" # budget alerts; "" to disable
+monthly_budget_usd = 60
+
+# Deploy on every push to main via GitHub Actions (needs GITHUB_TOKEN set).
+# github_repository = "your-user/pdf-utils-go"
+
+# Google sign-in (create the OAuth client in Google Cloud Console; see README).
+# google_client_id         = "1234-abc.apps.googleusercontent.com"
+# google_client_secret     = "set via TF_VAR_google_client_secret instead of this file"
+# google_mobile_client_ids = ["ios-id.apps.googleusercontent.com", "android-id.apps.googleusercontent.com"]
+
+# instance_type       = "t4g.medium"
+# data_volume_size_gb = 40
+# worker_replicas     = 2

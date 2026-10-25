@@ -1,0 +1,7 @@
+.terraform/
+*.tfstate
+*.tfstate.*
+terraform.tfvars
+aws/backend.hcl
+crash.log
+aws-lean/backend.hcl

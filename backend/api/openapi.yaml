@@ -1,0 +1,668 @@
+openapi: 3.1.0
+info:
+  title: PDF Utils API
+  version: 1.0.0
+  description: |
+    API used by the web app and the native Android/iOS apps.
+
+    **Flow:** upload files → create a task → poll the job → get a download link.
+
+    **Identity.** Send `Authorization: Bearer <access_token>` when signed in. Always send
+    `X-Device-Id` (a random 16–64 char id generated once per install): anonymous work and
+    rate limits are tied to it, and files are moved into the account on sign-in.
+
+    **Tokens.** Access tokens last 15 minutes. Refresh tokens rotate on every use; reusing an
+    old refresh token revokes all sessions. Mobile clients receive `refresh_token` in JSON and
+    should keep it in Keychain/Keystore. Web clients send `X-Client-Type: web` and receive it
+    as an httpOnly cookie instead.
+
+    **Errors** always look like `{"error": {"code": "...", "message": "...", "details": {...}}}`.
+    Show `message` to users; branch on `code`. A `429 limit_reached` means the plan allowance is
+    used up: prompt anonymous users to sign up.
+servers:
+  - url: http://localhost:8080
+    description: Local development
+
+security:
+  - {}
+  - bearer: []
+
+tags:
+  - name: Files
+  - name: Tasks
+  - name: Auth
+  - name: Account
+
+paths:
+  /v1/config:
+    get:
+      tags: [Account]
+      summary: Optional features enabled on this server
+      operationId: getConfig
+      responses:
+        "200":
+          description: Config
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [google_auth]
+                properties:
+                  google_auth: { type: boolean, description: Show "Continue with Google" only when true. }
+
+  /v1/tools:
+    get:
+      tags: [Tasks]
+      summary: List available tools
+      operationId: listTools
+      responses:
+        "200":
+          description: Tools
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [tools]
+                properties:
+                  tools: { type: array, items: { $ref: "#/components/schemas/ToolInfo" } }
+
+  /v1/uploads:
+    post:
+      tags: [Files]
+      summary: Upload one or more files
+      description: PDFs and images (JPG, PNG, WEBP, TIFF). Types are detected from content, not the filename.
+      operationId: uploadFiles
+      parameters: [{ $ref: "#/components/parameters/DeviceId" }]
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file:
+                  type: array
+                  items: { type: string, format: binary }
+      responses:
+        "201":
+          description: Uploaded
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [files]
+                properties:
+                  files: { type: array, items: { $ref: "#/components/schemas/File" } }
+        "400": { $ref: "#/components/responses/Error" }
+        "413": { $ref: "#/components/responses/Error" }
+        "415": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
+
+  /v1/files/{id}:
+    parameters: [{ $ref: "#/components/parameters/Id" }, { $ref: "#/components/parameters/DeviceId" }]
+    get:
+      tags: [Files]
+      summary: Get file metadata
+      operationId: getFile
+      responses:
+        "200": { description: File, content: { application/json: { schema: { $ref: "#/components/schemas/File" } } } }
+        "404": { $ref: "#/components/responses/Error" }
+    delete:
+      tags: [Files]
+      summary: Delete a file
+      operationId: deleteFile
+      responses:
+        "204": { description: Deleted }
+        "404": { $ref: "#/components/responses/Error" }
+
+  /v1/files/{id}/link:
+    get:
+      tags: [Files]
+      summary: Get a temporary download URL
+      description: The URL needs no auth headers (hand it to a download manager or open it in a browser) and expires after 15 minutes.
+      operationId: getFileLink
+      parameters: [{ $ref: "#/components/parameters/Id" }, { $ref: "#/components/parameters/DeviceId" }]
+      responses:
+        "200":
+          description: Link
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [url, expires_at, name, size]
+                properties:
+                  url: { type: string, format: uri }
+                  expires_at: { type: string, format: date-time }
+                  name: { type: string }
+                  size: { type: integer, format: int64 }
+        "404": { $ref: "#/components/responses/Error" }
+
+  /v1/tasks/{tool}:
+    post:
+      tags: [Tasks]
+      summary: Start processing files with a tool
+      operationId: createTask
+      parameters:
+        - name: tool
+          in: path
+          required: true
+          schema: { $ref: "#/components/schemas/ToolName" }
+        - { $ref: "#/components/parameters/DeviceId" }
+        - name: Idempotency-Key
+          in: header
+          description: Retrying with the same key returns the original job instead of starting another.
+          schema: { type: string, maxLength: 200 }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [file_ids]
+              properties:
+                file_ids:
+                  type: array
+                  description: Input files, in order (order matters for merge).
+                  items: { type: string, format: uuid }
+                options:
+                  description: Tool-specific options; see the *Options schemas.
+                  oneOf:
+                    - $ref: "#/components/schemas/MergeOptions"
+                    - $ref: "#/components/schemas/SplitOptions"
+                    - $ref: "#/components/schemas/CompressOptions"
+                    - $ref: "#/components/schemas/ImageToPdfOptions"
+                    - $ref: "#/components/schemas/PdfToImageOptions"
+                    - $ref: "#/components/schemas/RotateOptions"
+                    - $ref: "#/components/schemas/OrganizeOptions"
+                    - $ref: "#/components/schemas/RemovePagesOptions"
+                    - $ref: "#/components/schemas/WatermarkOptions"
+                    - $ref: "#/components/schemas/PageNumbersOptions"
+                    - $ref: "#/components/schemas/ProtectOptions"
+                    - $ref: "#/components/schemas/UnlockOptions"
+      responses:
+        "202": { description: Job queued, content: { application/json: { schema: { $ref: "#/components/schemas/Job" } } } }
+        "400": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "415": { $ref: "#/components/responses/Error" }
+        "422": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
+
+  /v1/jobs/{id}:
+    get:
+      tags: [Tasks]
+      summary: Get job status
+      description: Poll until `status` is `done` (then use `output.id` with /files/{id}/link) or `failed` (see `error`). Polling every 1s is fine.
+      operationId: getJob
+      parameters: [{ $ref: "#/components/parameters/Id" }, { $ref: "#/components/parameters/DeviceId" }]
+      responses:
+        "200": { description: Job, content: { application/json: { schema: { $ref: "#/components/schemas/Job" } } } }
+        "404": { $ref: "#/components/responses/Error" }
+
+  /v1/auth/signup:
+    post:
+      tags: [Auth]
+      summary: Create an account with email and password
+      operationId: signup
+      parameters: [{ $ref: "#/components/parameters/DeviceId" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: { type: string, format: email }
+                password: { type: string, minLength: 8, maxLength: 128 }
+                name: { type: string, maxLength: 100 }
+      responses:
+        "201": { $ref: "#/components/responses/Session" }
+        "409": { $ref: "#/components/responses/Error" }
+        "422": { $ref: "#/components/responses/Error" }
+
+  /v1/auth/login:
+    post:
+      tags: [Auth]
+      summary: Log in with email and password
+      operationId: login
+      parameters: [{ $ref: "#/components/parameters/DeviceId" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: { type: string }
+                password: { type: string }
+      responses:
+        "200": { $ref: "#/components/responses/Session" }
+        "401": { $ref: "#/components/responses/Error" }
+
+  /v1/auth/google/token:
+    post:
+      tags: [Auth]
+      summary: Sign in with a Google ID token (mobile)
+      description: Obtain the ID token with Google Sign-In on Android/iOS (its client id must be listed in GOOGLE_MOBILE_CLIENT_IDS).
+      operationId: googleToken
+      parameters: [{ $ref: "#/components/parameters/DeviceId" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [id_token]
+              properties:
+                id_token: { type: string }
+      responses:
+        "200": { $ref: "#/components/responses/Session" }
+        "401": { $ref: "#/components/responses/Error" }
+
+  /v1/auth/google/start:
+    get:
+      tags: [Auth]
+      summary: Begin Google sign-in (web redirect flow)
+      operationId: googleStart
+      responses:
+        "302": { description: Redirect to Google }
+
+  /v1/auth/refresh:
+    post:
+      tags: [Auth]
+      summary: Exchange a refresh token for a new session
+      operationId: refresh
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                refresh_token: { type: string, description: Omit on web (cookie is used). }
+      responses:
+        "200": { $ref: "#/components/responses/Session" }
+        "401": { $ref: "#/components/responses/Error" }
+
+  /v1/auth/logout:
+    post:
+      tags: [Auth]
+      summary: Revoke a refresh token
+      operationId: logout
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                refresh_token: { type: string }
+      responses:
+        "204": { description: Logged out }
+
+  /v1/auth/verify-email:
+    post:
+      tags: [Auth]
+      summary: Confirm an email address with the emailed token
+      operationId: verifyEmail
+      requestBody:
+        required: true
+        content: { application/json: { schema: { type: object, required: [token], properties: { token: { type: string } } } } }
+      responses:
+        "204": { description: Verified }
+        "400": { $ref: "#/components/responses/Error" }
+
+  /v1/auth/forgot-password:
+    post:
+      tags: [Auth]
+      summary: Email a password reset link
+      description: Always returns 202, whether or not the email has an account.
+      operationId: forgotPassword
+      requestBody:
+        required: true
+        content: { application/json: { schema: { type: object, required: [email], properties: { email: { type: string } } } } }
+      responses:
+        "202": { description: Accepted }
+
+  /v1/auth/reset-password:
+    post:
+      tags: [Auth]
+      summary: Set a new password with the emailed token
+      operationId: resetPassword
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token, password]
+              properties:
+                token: { type: string }
+                password: { type: string, minLength: 8, maxLength: 128 }
+      responses:
+        "204": { description: Password changed; all sessions revoked }
+        "400": { $ref: "#/components/responses/Error" }
+
+  /v1/me:
+    get:
+      tags: [Account]
+      summary: Current user (null if anonymous), plan limits and usage
+      operationId: getMe
+      parameters: [{ $ref: "#/components/parameters/DeviceId" }]
+      responses:
+        "200": { description: Me, content: { application/json: { schema: { $ref: "#/components/schemas/Me" } } } }
+    patch:
+      tags: [Account]
+      summary: Update profile
+      operationId: updateMe
+      security: [{ bearer: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { type: object, properties: { name: { type: string, maxLength: 100 } } } } }
+      responses:
+        "200": { description: Updated user, content: { application/json: { schema: { $ref: "#/components/schemas/User" } } } }
+    delete:
+      tags: [Account]
+      summary: Permanently delete the account and all files
+      operationId: deleteMe
+      security: [{ bearer: [] }]
+      responses:
+        "204": { description: Deleted }
+
+  /v1/me/password:
+    post:
+      tags: [Account]
+      summary: Change (or, for Google-only accounts, set) the password
+      operationId: changePassword
+      security: [{ bearer: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [new_password]
+              properties:
+                current_password: { type: string }
+                new_password: { type: string, minLength: 8, maxLength: 128 }
+      responses:
+        "204": { description: Changed }
+        "403": { $ref: "#/components/responses/Error" }
+
+  /v1/me/resend-verification:
+    post:
+      tags: [Account]
+      summary: Resend the email confirmation link
+      operationId: resendVerification
+      security: [{ bearer: [] }]
+      responses:
+        "202": { description: Sent }
+
+  /v1/me/files:
+    get:
+      tags: [Account]
+      summary: File history (newest first)
+      operationId: listMyFiles
+      security: [{ bearer: [] }]
+      parameters:
+        - { name: kind, in: query, schema: { type: string, enum: [input, output] } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 30 } }
+        - { name: cursor, in: query, schema: { type: string }, description: "`next_cursor` from the previous page" }
+      responses:
+        "200":
+          description: Page of files
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [files, next_cursor]
+                properties:
+                  files: { type: array, items: { $ref: "#/components/schemas/File" } }
+                  next_cursor: { type: [string, "null"] }
+
+components:
+  securitySchemes:
+    bearer: { type: http, scheme: bearer, bearerFormat: JWT }
+
+  parameters:
+    Id:
+      name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    DeviceId:
+      name: X-Device-Id
+      in: header
+      description: Random per-install id, 16–64 chars of [A-Za-z0-9_-].
+      schema: { type: string, pattern: "^[A-Za-z0-9_-]{16,64}$" }
+
+  responses:
+    Error:
+      description: Error
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Session:
+      description: Signed in
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Session" }
+
+  schemas:
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code:
+              type: string
+              description: |
+                Stable machine-readable code, e.g. bad_request, invalid_token, unauthorized, not_found,
+                rate_limited, limit_reached, file_too_large, quota_exceeded, too_many_files,
+                unsupported_file, empty_file, invalid_options, invalid_file_count, file_not_found,
+                unknown_tool, email_taken, invalid_email, weak_password, invalid_credentials,
+                invalid_refresh_token, invalid_google_token, link_expired, internal_error.
+            message: { type: string }
+            details: { type: object, additionalProperties: true }
+
+    ToolName:
+      type: string
+      enum: [merge, split, compress, image_to_pdf, pdf_to_image, rotate, organize, remove_pages, watermark, page_numbers, protect, unlock]
+
+    ToolInfo:
+      type: object
+      required: [name, accepts, min_files, max_files]
+      properties:
+        name: { $ref: "#/components/schemas/ToolName" }
+        accepts: { type: string, enum: [pdf, image] }
+        min_files: { type: integer }
+        max_files: { type: integer }
+
+    File:
+      type: object
+      required: [id, name, size, mime, kind, created_at, expires_at]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        size: { type: integer, format: int64 }
+        mime: { type: string, examples: [application/pdf, application/zip, image/jpeg] }
+        kind: { type: string, enum: [input, output] }
+        job_id: { type: string, format: uuid }
+        created_at: { type: string, format: date-time }
+        expires_at:
+          type: [string, "null"]
+          format: date-time
+          description: When the file is deleted; null for files kept in a user's history.
+
+    Job:
+      type: object
+      required: [id, tool, status, progress, input_ids, created_at, finished_at]
+      properties:
+        id: { type: string, format: uuid }
+        tool: { $ref: "#/components/schemas/ToolName" }
+        status: { type: string, enum: [queued, processing, done, failed] }
+        progress: { type: integer, minimum: 0, maximum: 100 }
+        error:
+          type: object
+          description: "Set when failed. Codes include wrong_password, encrypted_pdf, invalid_pdf, not_encrypted, file_expired, timeout, internal_error."
+          properties:
+            code: { type: string }
+            message: { type: string }
+        input_ids: { type: array, items: { type: string, format: uuid } }
+        output: { $ref: "#/components/schemas/File" }
+        created_at: { type: string, format: date-time }
+        finished_at: { type: [string, "null"], format: date-time }
+
+    User:
+      type: object
+      required: [id, email, name, avatar_url, plan, email_verified, has_password, has_google, created_at]
+      properties:
+        id: { type: string, format: uuid }
+        email: { type: string }
+        name: { type: string }
+        avatar_url: { type: string }
+        plan: { type: string, examples: [free] }
+        email_verified: { type: boolean }
+        has_password: { type: boolean }
+        has_google: { type: boolean }
+        created_at: { type: string, format: date-time }
+
+    Session:
+      type: object
+      required: [access_token, token_type, expires_at, user]
+      properties:
+        access_token: { type: string }
+        token_type: { type: string, const: Bearer }
+        expires_at: { type: string, format: date-time }
+        refresh_token: { type: string, description: Present for non-web clients. }
+        user: { $ref: "#/components/schemas/User" }
+
+    Limits:
+      type: object
+      required: [tasks_per_hour, max_file_mb, max_files_per_task, storage_mb]
+      properties:
+        tasks_per_hour: { type: integer }
+        max_file_mb: { type: integer }
+        max_files_per_task: { type: integer }
+        storage_mb: { type: integer }
+
+    Me:
+      type: object
+      required: [user, plan, limits]
+      properties:
+        user: { oneOf: [{ $ref: "#/components/schemas/User" }, { type: "null" }] }
+        plan: { type: string, examples: [anon, free] }
+        limits: { $ref: "#/components/schemas/Limits" }
+        tasks:
+          type: object
+          properties:
+            remaining: { type: integer }
+            limit: { type: integer }
+            reset_at: { type: string, format: date-time }
+        storage:
+          type: object
+          properties:
+            used_bytes: { type: integer, format: int64 }
+            limit_bytes: { type: integer, format: int64 }
+
+    PageSelection:
+      type: string
+      pattern: "^\\s*\\d+(\\s*-\\s*\\d+)?(\\s*,\\s*\\d+(\\s*-\\s*\\d+)?)*\\s*$"
+      examples: ["1-3,5,8-10"]
+
+    MergeOptions:
+      title: merge
+      type: object
+      additionalProperties: false
+    SplitOptions:
+      title: split
+      type: object
+      additionalProperties: false
+      properties:
+        mode: { type: string, enum: [ranges, every, extract], default: every }
+        ranges: { type: array, items: { $ref: "#/components/schemas/PageSelection" }, description: "mode=ranges: one PDF per range" }
+        every: { type: integer, minimum: 1, default: 1, description: "mode=every: pages per file" }
+        pages: { $ref: "#/components/schemas/PageSelection" }
+        merge: { type: boolean, description: "mode=extract: one PDF instead of one file per page" }
+    CompressOptions:
+      title: compress
+      type: object
+      additionalProperties: false
+      properties:
+        level: { type: string, enum: [low, recommended, extreme], default: recommended }
+    ImageToPdfOptions:
+      title: image_to_pdf
+      type: object
+      additionalProperties: false
+      properties:
+        page_size: { type: string, enum: [fit, A4, Letter], default: fit }
+        orientation: { type: string, enum: [portrait, landscape], default: portrait }
+        margin: { type: string, enum: [none, small, big], default: none }
+    PdfToImageOptions:
+      title: pdf_to_image
+      type: object
+      additionalProperties: false
+      properties:
+        format: { type: string, enum: [jpg, png], default: jpg }
+        dpi: { type: integer, minimum: 72, maximum: 300, default: 150 }
+        pages: { $ref: "#/components/schemas/PageSelection" }
+    RotateOptions:
+      title: rotate
+      type: object
+      additionalProperties: false
+      required: [angle]
+      properties:
+        angle: { type: integer, enum: [90, 180, 270, -90] }
+        pages: { $ref: "#/components/schemas/PageSelection" }
+    OrganizeOptions:
+      title: organize
+      type: object
+      additionalProperties: false
+      required: [order]
+      properties:
+        order: { type: array, items: { type: integer, minimum: 1 }, description: New page sequence; omitted pages are dropped. }
+    RemovePagesOptions:
+      title: remove_pages
+      type: object
+      additionalProperties: false
+      required: [pages]
+      properties:
+        pages: { $ref: "#/components/schemas/PageSelection" }
+    WatermarkOptions:
+      title: watermark
+      type: object
+      additionalProperties: false
+      required: [text]
+      properties:
+        text: { type: string, maxLength: 200 }
+        font_size: { type: integer, minimum: 6, maximum: 200, default: 48 }
+        opacity: { type: number, minimum: 0, maximum: 1, default: 0.3 }
+        rotation: { type: integer, minimum: -180, maximum: 180, default: 0 }
+        color: { type: string, pattern: "^#[0-9a-fA-F]{6}$", default: "#808080" }
+        position: { type: string, enum: [tl, tc, tr, l, c, r, bl, bc, br], default: c }
+        pages: { $ref: "#/components/schemas/PageSelection" }
+    PageNumbersOptions:
+      title: page_numbers
+      type: object
+      additionalProperties: false
+      properties:
+        position: { type: string, enum: [bl, bc, br, tl, tc, tr], default: bc }
+        format: { type: string, enum: [n, n_of_total, page_n, page_n_of_total], default: n }
+        font_size: { type: integer, minimum: 6, maximum: 48, default: 11 }
+        pages: { $ref: "#/components/schemas/PageSelection" }
+    ProtectOptions:
+      title: protect
+      type: object
+      additionalProperties: false
+      required: [password]
+      properties:
+        password: { type: string, minLength: 1, maxLength: 128 }
+        owner_password: { type: string, maxLength: 128 }
+    UnlockOptions:
+      title: unlock
+      type: object
+      additionalProperties: false
+      properties:
+        password: { type: string, maxLength: 128 }

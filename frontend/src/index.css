@@ -1,0 +1,85 @@
+@import "tailwindcss";
+
+/* Semantic color tokens; the dark palette overrides them below. */
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+
+  --color-bg: #f7f7f9;
+  --color-surface: #ffffff;
+  --color-surface-2: #f1f1f4;
+  --color-fg: #17171c;
+  --color-muted: #63636e;
+  --color-line: #e3e3e8;
+
+  --color-brand: #e5484d;
+  --color-brand-strong: #cd2b31;
+  --color-brand-soft: #feebec;
+
+  --color-ok: #18794e;
+  --color-ok-soft: #e9f9ee;
+  --color-warn: #ad5700;
+  --color-warn-soft: #fff4d5;
+  --color-danger: #cd2b31;
+  --color-danger-soft: #ffefef;
+
+  /* Tool category accents */
+  --color-cat-organize: #e5484d;
+  --color-cat-optimize: #30a46c;
+  --color-cat-convert: #f5a524;
+  --color-cat-edit: #8e4ec6;
+  --color-cat-security: #0090ff;
+
+  --shadow-card: 0 1px 2px rgb(0 0 0 / 0.04), 0 4px 16px rgb(0 0 0 / 0.04);
+  --shadow-lift: 0 2px 4px rgb(0 0 0 / 0.06), 0 12px 32px rgb(0 0 0 / 0.08);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --color-bg: #111114;
+    --color-surface: #19191d;
+    --color-surface-2: #222227;
+    --color-fg: #ededf0;
+    --color-muted: #a0a0ab;
+    --color-line: #2e2e35;
+    --color-brand-soft: #3b1219;
+    --color-ok: #3dd68c;
+    --color-ok-soft: #132d21;
+    --color-warn: #ffca16;
+    --color-warn-soft: #302008;
+    --color-danger: #ff9592;
+    --color-danger-soft: #3b1219;
+    --shadow-card: 0 1px 2px rgb(0 0 0 / 0.4);
+    --shadow-lift: 0 8px 32px rgb(0 0 0 / 0.5);
+    color-scheme: dark;
+  }
+}
+
+html { background: var(--color-bg); color: var(--color-fg); }
+body { @apply font-sans antialiased; }
+
+:focus-visible { outline: 2px solid var(--color-brand); outline-offset: 2px; }
+
+@utility btn {
+  @apply inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-50;
+}
+@utility btn-primary {
+  @apply btn bg-brand text-white hover:bg-brand-strong;
+}
+@utility btn-secondary {
+  @apply btn border border-line bg-surface text-fg hover:bg-surface-2;
+}
+@utility btn-ghost {
+  @apply btn text-fg hover:bg-surface-2;
+}
+@utility btn-lg {
+  @apply px-7 py-4 text-base;
+}
+@utility input {
+  @apply w-full rounded-xl border border-line bg-surface px-3.5 py-2.5 text-sm text-fg outline-none transition placeholder:text-muted focus:border-brand focus:ring-4 focus:ring-brand/15;
+}
+@utility label {
+  @apply mb-1.5 block text-sm font-medium text-fg;
+}
+@utility card {
+  @apply rounded-2xl border border-line bg-surface shadow-[var(--shadow-card)];
+}

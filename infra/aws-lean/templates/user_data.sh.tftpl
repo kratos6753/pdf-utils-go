@@ -1,0 +1,112 @@
+#!/bin/bash
+# First-boot setup (cloud-init): swap, persistent data volume, Docker, deploy.
+set -euxo pipefail
+
+cat > /etc/pdfutils.conf <<CONF
+REGION=${region}
+SSM_PREFIX=${ssm_prefix}
+BUCKET=${bucket}
+CONF
+
+# 1 GiB of RAM needs swap for Ghostscript peaks and image pulls.
+if [ ! -f /swapfile ]; then
+  fallocate -l ${swap_gb}G /swapfile && chmod 600 /swapfile && mkswap /swapfile
+  echo "/swapfile none swap sw 0 0" >> /etc/fstab
+fi
+swapon -a
+sysctl -w vm.swappiness=10
+echo "vm.swappiness=10" > /etc/sysctl.d/90-swappiness.conf
+
+# Persistent data volume; formatted only the first time.
+dev=/dev/disk/by-id/nvme-Amazon_Elastic_Block_Store_${volume_id}
+legacy=/dev/xvdf # Xen instance types (t2.*) expose the volume here instead
+for _ in $(seq 1 120); do
+  if [ -e "$dev" ]; then break; fi
+  if [ -e "$legacy" ]; then dev=$legacy; break; fi
+  sleep 5
+done
+[ -e "$dev" ]
+blkid "$dev" || mkfs.xfs -L pdfutils-data "$dev"
+mkdir -p /data
+uuid=$(blkid -s UUID -o value "$dev")
+grep -q "$uuid" /etc/fstab || echo "UUID=$uuid /data xfs defaults,nofail 0 2" >> /etc/fstab
+mount -a
+
+dnf install -y docker
+mkdir -p /etc/docker /data/docker
+# Logs stay on the instance (rotated), no CloudWatch charges.
+cat > /etc/docker/daemon.json <<'JSON'
+{ "data-root": "/data/docker", "log-driver": "local", "log-opts": { "max-size": "10m", "max-file": "3" } }
+JSON
+arch=$(uname -m)
+case "$arch" in
+  aarch64) sum=0c4591cf3b1ed039adcd803dbbeddf757375fc08c11245b0154135f838495a2f ;;
+  x86_64)  sum=ed1917fb54db184192ea9d0717bcd59e3662ea79db48bff36d3475516c480a6b ;;
+esac
+mkdir -p /usr/local/lib/docker/cli-plugins
+curl -fsSL -o /usr/local/lib/docker/cli-plugins/docker-compose \
+  "https://github.com/docker/compose/releases/download/v2.32.4/docker-compose-linux-$arch"
+echo "$sum  /usr/local/lib/docker/cli-plugins/docker-compose" | sha256sum -c -
+chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
+systemctl enable --now docker
+
+mkdir -p /opt/pdfutils
+cat > /usr/local/bin/pdfutils-deploy <<'SH'
+#!/bin/bash
+set -euo pipefail
+source /etc/pdfutils.conf
+export AWS_DEFAULT_REGION=$REGION
+for f in deploy.sh backup.sh; do
+  aws s3 cp "s3://$BUCKET/deploy/$f" "/opt/pdfutils/$f" --only-show-errors
+  chmod +x "/opt/pdfutils/$f"
+done
+exec /opt/pdfutils/deploy.sh
+SH
+chmod +x /usr/local/bin/pdfutils-deploy
+
+cat > /etc/systemd/system/pdfutils.service <<'UNIT'
+[Unit]
+Description=Deploy PDF Utils (refresh config and images, start containers)
+After=docker.service network-online.target
+Wants=network-online.target
+Requires=docker.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/bin/pdfutils-deploy
+TimeoutStartSec=1200
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+%{ if enable_backups ~}
+
+cat > /etc/systemd/system/pdfutils-backup.service <<'UNIT'
+[Unit]
+Description=Back up Postgres to S3
+
+[Service]
+Type=oneshot
+ExecStart=/opt/pdfutils/backup.sh
+UNIT
+
+cat > /etc/systemd/system/pdfutils-backup.timer <<'UNIT'
+[Unit]
+Description=Nightly Postgres backup
+
+[Timer]
+OnCalendar=*-*-* 03:00:00 UTC
+Persistent=true
+RandomizedDelaySec=15m
+
+[Install]
+WantedBy=timers.target
+UNIT
+systemctl daemon-reload
+systemctl enable --now pdfutils-backup.timer
+%{ endif ~}
+
+systemctl daemon-reload
+systemctl enable pdfutils.service
+systemctl start pdfutils.service
