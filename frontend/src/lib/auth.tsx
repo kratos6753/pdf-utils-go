@@ -17,13 +17,13 @@ const AuthContext = createContext<AuthState | null>(null)
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
-  const [ready, setReady] = useState(false)
+  // Without a session hint there is nothing to restore, so we are ready at once.
+  const [ready, setReady] = useState(() => !hasSessionHint())
   const qc = useQueryClient()
 
   useEffect(() => {
     setSessionListener((s) => setUser(s?.user ?? null))
-    if (hasSessionHint()) refreshSession().finally(() => setReady(true))
-    else setReady(true)
+    if (hasSessionHint()) void refreshSession().finally(() => setReady(true))
   }, [])
 
   // Refresh shortly before the access token expires.

@@ -10,3 +10,13 @@ test('home lists tools and search filters them', async ({ page }) => {
   await page.getByPlaceholder('Search tools…').fill('')
   await page.screenshot({ path: `e2e/.shots/home-${test.info().project.name}.png`, fullPage: true })
 })
+
+test('menus close after navigating', async ({ page, isMobile }) => {
+  test.skip(isMobile, 'desktop navigation')
+  await page.goto('/')
+  await page.getByRole('button', { name: 'All tools' }).click()
+  const menuLink = page.getByRole('banner').getByRole('link', { name: 'Rotate PDF' })
+  await menuLink.click()
+  await expect(page).toHaveURL(/rotate-pdf/)
+  await expect(menuLink).toHaveCount(0)
+})

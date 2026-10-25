@@ -19,28 +19,6 @@ export interface Item {
   error?: string
 }
 
-export const acceptAttr = { pdf: 'application/pdf,.pdf', image: 'image/jpeg,image/png,image/webp,image/tiff,.jpg,.jpeg,.png,.webp,.tif,.tiff' }
-
-/** Opens the native file picker. */
-export function usePicker(accept: string, multiple: boolean, onFiles: (f: File[]) => void) {
-  const ref = useRef<HTMLInputElement>(null)
-  const input = (
-    <input
-      ref={ref}
-      type="file"
-      hidden
-      accept={accept}
-      multiple={multiple}
-      onChange={(e) => {
-        const files = Array.from(e.target.files ?? [])
-        e.target.value = ''
-        if (files.length) onFiles(files)
-      }}
-    />
-  )
-  return { input, open: () => ref.current?.click() }
-}
-
 /** Shows a full-window overlay while files are dragged over the page. */
 export function WindowDrop({ onFiles, label }: { onFiles: (f: File[]) => void; label: string }) {
   const [over, setOver] = useState(false)
@@ -85,42 +63,49 @@ export function WindowDrop({ onFiles, label }: { onFiles: (f: File[]) => void; l
   )
 }
 
-/** First-page thumbnail for a PDF, or the image itself. */
-export function Thumb({ blob, mime, className }: { blob?: Blob; mime?: string; className?: string }) {
-  const [src, setSrc] = useState<string>()
-  const [state, setState] = useState<'loading' | 'ok' | 'locked' | 'error'>('loading')
+const spinner = <div className="size-6 animate-spin rounded-full border-2 border-line border-t-brand" />
+
+/** Shows a local image through a short-lived object URL. */
+function ImageThumb({ blob }: { blob: Blob }) {
+  const ref = useRef<HTMLImageElement>(null)
   useEffect(() => {
-    if (!blob) {
-      setState('error')
-      return
-    }
-    let url: string | undefined
+    const url = URL.createObjectURL(blob)
+    if (ref.current) ref.current.src = url
+    return () => URL.revokeObjectURL(url)
+  }, [blob])
+  return <img ref={ref} alt="" className="max-h-full max-w-full object-contain shadow-sm" draggable={false} />
+}
+
+type Rendered = { blob: Blob; src?: string; status: 'ok' | 'locked' | 'error' }
+
+/** Renders the first page of a PDF with pdf.js. */
+function PdfThumb({ blob }: { blob: Blob }) {
+  const [rendered, setRendered] = useState<Rendered>()
+  useEffect(() => {
     let alive = true
-    const type = mime ?? blob.type
-    if (type.startsWith('image/') && type !== 'image/tiff') {
-      url = URL.createObjectURL(blob)
-      setSrc(url)
-      setState('ok')
-    } else if (type === 'application/pdf' || type === '') {
-      loadPdf(blob)
-        .then((doc) => renderPage(doc, 1, 180))
-        .then((u) => alive && (setSrc(u), setState('ok')))
-        .catch((e) => alive && setState(isPasswordError(e) ? 'locked' : 'error'))
-    } else setState('error')
+    loadPdf(blob)
+      .then((doc) => renderPage(doc, 1, 180))
+      .then((src) => alive && setRendered({ blob, src, status: 'ok' }))
+      .catch((e) => alive && setRendered({ blob, status: isPasswordError(e) ? 'locked' : 'error' }))
     return () => {
       alive = false
-      if (url) URL.revokeObjectURL(url)
     }
-  }, [blob, mime])
+  }, [blob])
+  // A result for a previous blob is stale: show the spinner until this one renders.
+  const r = rendered?.blob === blob ? rendered : undefined
+  if (!r) return spinner
+  if (r.status === 'locked') return <Lock className="size-10 text-muted" />
+  if (r.status === 'error') return <FileText className="size-10 text-muted" />
+  return <img src={r.src} alt="" className="max-h-full max-w-full object-contain shadow-sm" draggable={false} />
+}
 
-  return (
-    <div className={clsx('grid place-items-center overflow-hidden bg-surface-2', className)}>
-      {state === 'ok' && <img src={src} alt="" className="max-h-full max-w-full object-contain shadow-sm" draggable={false} />}
-      {state === 'loading' && <div className="size-6 animate-spin rounded-full border-2 border-line border-t-brand" />}
-      {state === 'locked' && <Lock className="size-10 text-muted" />}
-      {state === 'error' && <FileText className="size-10 text-muted" />}
-    </div>
-  )
+/** First-page thumbnail for a PDF, or the image itself. */
+export function Thumb({ blob, mime, className }: { blob?: Blob; mime?: string; className?: string }) {
+  const type = mime ?? blob?.type ?? ''
+  let content = <FileText className="size-10 text-muted" />
+  if (blob && type.startsWith('image/') && type !== 'image/tiff') content = <ImageThumb blob={blob} />
+  else if (blob && (type === 'application/pdf' || type === '')) content = <PdfThumb blob={blob} />
+  return <div className={clsx('grid place-items-center overflow-hidden bg-surface-2', className)}>{content}</div>
 }
 
 function FileCard({ item, index, sortable, onRemove }: { item: Item; index: number; sortable: boolean; onRemove: () => void }) {

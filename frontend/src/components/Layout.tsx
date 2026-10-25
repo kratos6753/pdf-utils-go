@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { ChevronDown, History, LogOut, Menu, User as UserIcon, X } from 'lucide-react'
 import clsx from 'clsx'
@@ -7,6 +7,7 @@ import { categories, tools } from '../lib/tools'
 import { ToolIcon } from './ToolCard'
 
 export const APP_NAME = 'PDF Utils'
+const YEAR = new Date().getFullYear()
 
 export function Logo() {
   return (
@@ -30,21 +31,21 @@ function useClickOutside(onOutside: () => void) {
 }
 
 function Dropdown({ label, children, align = 'left' }: { label: ReactNode; children: (close: () => void) => ReactNode; align?: 'left' | 'right' }) {
-  const [open, setOpen] = useState(false)
-  const ref = useClickOutside(() => setOpen(false))
+  // Remember the page the menu was opened on; navigating closes it implicitly.
   const { pathname } = useLocation()
-  useEffect(() => {
-    setOpen(false)
-  }, [pathname])
+  const [openOn, setOpenOn] = useState<string | null>(null)
+  const open = openOn === pathname
+  const close = useCallback(() => setOpenOn(null), [])
+  const ref = useClickOutside(close)
   return (
     <div ref={ref} className="relative">
-      <button className="btn-ghost px-3" onClick={() => setOpen((o) => !o)} aria-expanded={open}>
+      <button className="btn-ghost px-3" onClick={() => setOpenOn(open ? null : pathname)} aria-expanded={open}>
         {label}
         <ChevronDown className={clsx('size-4 transition', open && 'rotate-180')} />
       </button>
       {open && (
         <div className={clsx('card absolute top-full z-50 mt-2 p-2 shadow-[var(--shadow-lift)]', align === 'right' ? 'right-0' : 'left-0')}>
-          {children(() => setOpen(false))}
+          {children(close)}
         </div>
       )}
     </div>
@@ -119,11 +120,9 @@ const quickLinks = ['merge-pdf', 'split-pdf', 'compress-pdf']
 
 function Header() {
   const { user, ready } = useAuth()
-  const [mobileOpen, setMobileOpen] = useState(false)
   const { pathname } = useLocation()
-  useEffect(() => {
-    setMobileOpen(false)
-  }, [pathname])
+  const [mobileOpenOn, setMobileOpenOn] = useState<string | null>(null)
+  const mobileOpen = mobileOpenOn === pathname // closes on navigation
 
   return (
     <header className="sticky top-0 z-40 border-b border-line bg-surface/85 backdrop-blur-md">
@@ -166,7 +165,7 @@ function Header() {
             </>
           )}
           {user && <UserMenu />}
-          <button className="btn-ghost px-2 md:hidden" onClick={() => setMobileOpen((o) => !o)} aria-label="Menu">
+          <button className="btn-ghost px-2 md:hidden" onClick={() => setMobileOpenOn(mobileOpen ? null : pathname)} aria-label="Menu">
             {mobileOpen ? <X className="size-5" /> : <Menu className="size-5" />}
           </button>
         </div>
@@ -225,7 +224,7 @@ function Footer() {
         ))}
       </div>
       <div className="border-t border-line py-5 text-center text-xs text-muted">
-        © {new Date().getFullYear()} {APP_NAME}. Files are encrypted in transit and deleted automatically.
+        © {YEAR} {APP_NAME}. Files are encrypted in transit and deleted automatically.
       </div>
     </footer>
   )
