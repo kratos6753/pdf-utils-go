@@ -1,5 +1,5 @@
 # Copy to terraform.tfvars. Put secrets in environment variables instead:
-#   export TF_VAR_dockerhub_token=dckr_pat_...      (Docker Hub, Read & Write)
+#   export TF_VAR_dockerhub_token=dckr_pat_...      (Docker Hub, Read, Write, Delete)
 #   export TF_VAR_smtp_password=abcdabcdabcdabcd    (Google app password)
 
 region       = "us-east-1"

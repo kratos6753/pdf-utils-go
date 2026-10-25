@@ -44,7 +44,7 @@ Kept because they cost nothing: a dedicated VPC with an S3 gateway endpoint, SSM
 
 These need a human, once. Terraform does everything else.
 
-1. **Docker Hub:** create an account (free), then go to *Account settings → Personal access tokens → Generate*. Choose **Read & Write** access. Terraform creates the private repository with this token, and the server pulls with it.
+1. **Docker Hub:** create an account (free), then go to *Account settings → Personal access tokens → Generate*. Choose **Read, Write, Delete** access (Read & Write can push but not create repositories, which fails with `access denied: insufficient scope`). Terraform creates the private repository with this token, and the server pulls with it.
 2. **Gmail (optional, for verification and reset emails):** turn on 2-Step Verification for the Google account, then create an app password at https://myaccount.google.com/apppasswords. Skip this and emails are only written to the server log. Signing up still works; the "verify your email" banner just can't be cleared.
 3. **Domain:** best in Route 53 (zero manual steps). If it's elsewhere, set `route53_zone = ""` and create an A record pointing at the `public_ip` output at your DNS provider.
 

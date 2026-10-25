@@ -26,7 +26,7 @@ for _ in $(seq 1 120); do
   sleep 5
 done
 [ -e "$dev" ]
-blkid "$dev" || mkfs.xfs -L pdfutils-data "$dev"
+blkid "$dev" || mkfs.xfs -L pdfutils "$dev"
 mkdir -p /data
 uuid=$(blkid -s UUID -o value "$dev")
 grep -q "$uuid" /etc/fstab || echo "UUID=$uuid /data xfs defaults,nofail 0 2" >> /etc/fstab

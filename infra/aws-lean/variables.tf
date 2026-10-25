@@ -74,7 +74,7 @@ variable "dockerhub_username" {
 }
 
 variable "dockerhub_token" {
-  description = "Docker Hub personal access token with Read & Write scope (set via TF_VAR_dockerhub_token)."
+  description = "Docker Hub personal access token with Read, Write, Delete scope, needed to create the repository (set via TF_VAR_dockerhub_token)."
   type        = string
   sensitive   = true
 }
@@ -101,6 +101,10 @@ variable "smtp_password" {
   type        = string
   default     = ""
   sensitive   = true
+  validation {
+    condition     = var.smtp_username == "" || nonsensitive(var.smtp_password != "")
+    error_message = "smtp_username is set but smtp_password is empty: export TF_VAR_smtp_password=<Google app password> in this shell (or clear smtp_username to disable email)."
+  }
 }
 
 variable "smtp_host" {

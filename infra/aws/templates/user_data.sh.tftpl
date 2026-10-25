@@ -21,7 +21,7 @@ swapon -a
 dev=/dev/disk/by-id/nvme-Amazon_Elastic_Block_Store_${volume_id}
 for _ in $(seq 1 120); do [ -e "$dev" ] && break; sleep 5; done
 [ -e "$dev" ]
-blkid "$dev" || mkfs.xfs -L pdfutils-data "$dev"
+blkid "$dev" || mkfs.xfs -L pdfutils "$dev"
 mkdir -p /data
 uuid=$(blkid -s UUID -o value "$dev")
 grep -q "$uuid" /etc/fstab || echo "UUID=$uuid /data xfs defaults,nofail 0 2" >> /etc/fstab
