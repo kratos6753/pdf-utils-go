@@ -124,7 +124,12 @@ func listDir(dir string) ([]string, error) {
 
 // run executes an external binary, returning stderr in the error on failure.
 func run(ctx context.Context, bin string, args ...string) error {
+	return runStdin(ctx, nil, bin, args...)
+}
+
+func runStdin(ctx context.Context, stdin io.Reader, bin string, args ...string) error {
 	cmd := exec.CommandContext(ctx, bin, args...)
+	cmd.Stdin = stdin
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {

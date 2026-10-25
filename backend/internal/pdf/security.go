@@ -3,9 +3,7 @@ package pdf
 import (
 	"context"
 	"errors"
-	"os"
 	"os/exec"
-	"path/filepath"
 	"strings"
 
 	"github.com/pdfcpu/pdfcpu/pkg/api"
@@ -61,15 +59,10 @@ func unlock(ctx context.Context, in []Input, o *unlockOpts, outDir string) (*Out
 		}
 		return nil, err
 	}
-	// Pass the password through a file so it never shows up in the process list.
-	pwFile := filepath.Join(outDir, ".pw")
-	if err := os.WriteFile(pwFile, []byte(o.Password), 0o600); err != nil {
-		return nil, err
-	}
-	defer os.Remove(pwFile)
-
+	// Pass the password on stdin so it never shows up in the process list
+	// or touches the disk.
 	out := pdfOut(outDir, stem(in[0].Name)+"_unlocked.pdf")
-	err := run(ctx, "qpdf", "--password-file="+pwFile, "--decrypt", src, out.Path)
+	err := runStdin(ctx, strings.NewReader(o.Password), "qpdf", "--password-file=-", "--decrypt", src, out.Path)
 	var ee *exec.ExitError
 	switch {
 	case err == nil:
