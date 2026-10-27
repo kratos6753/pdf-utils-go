@@ -5,3 +5,5 @@ terraform.tfvars
 aws/backend.hcl
 crash.log
 aws-lean/backend.hcl
+# Local secrets, auto-loaded by Terraform (see docs/production-lean.md)
+*.auto.tfvars

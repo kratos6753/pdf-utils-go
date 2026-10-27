@@ -1,0 +1,10 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "site.chirudev.pdfutils",
+      "sha256_cert_fingerprints": ["4B:EC:61:90:C8:E4:AF:70:1E:89:0D:09:27:0B:69:C2:12:FA:5F:18:13:82:94:FE:76:A5:30:99:35:BC:C6:2C"]
+    }
+  }
+]

@@ -4,6 +4,7 @@ A suite of online PDF tools, similar to iLovePDF or Smallpdf: merge, split, comp
 
 - **backend/**: Go API and job worker, one binary (`pdfutils server|worker|migrate`)
 - **frontend/**: React, Vite and Tailwind web app
+- **android/**: native Android app (Kotlin, Jetpack Compose, Material 3). See [android/README.md](android/README.md)
 - **backend/api/openapi.yaml**: the API contract, used to generate the Android and iOS clients
 - **infra/**: Terraform for AWS: `bootstrap` (state bucket), `aws` (full production), `aws-lean` (low-cost production)
 - **deploy/**: Docker Compose for local dev, Caddy config, and a non-AWS VPS stack
@@ -63,7 +64,7 @@ To add a paid tier, insert a row into `plans` and set `users.plan`. No code chan
 
 ## Building the mobile apps
 
-Generate clients from `backend/api/openapi.yaml`:
+The Android app lives in `android/`, with a hand-written client. CI builds it and publishes a signed APK as a GitHub Release on every push to `main` that touches it (see [android/README.md](android/README.md)). For other clients, generate code from `backend/api/openapi.yaml`:
 
 ```sh
 npx @openapitools/openapi-generator-cli generate -i backend/api/openapi.yaml -g kotlin -o mobile/android-client

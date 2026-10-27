@@ -22,6 +22,26 @@ locals {
   )
 }
 
+# Jobs that use an environment get it, not the branch, in their OIDC subject,
+# and the ci.yml deploy jobs run in "production". Repos with immutable subjects
+# use "owner@id/repo@id" in place of "owner/repo", so trust both forms.
+data "github_repository" "this" {
+  count     = local.github_enabled ? 1 : 0
+  full_name = var.github_repository
+}
+
+data "github_user" "owner" {
+  count    = local.github_enabled ? 1 : 0
+  username = local.github_owner
+}
+
+locals {
+  github_oidc_subjects = !local.github_enabled ? [] : [
+    "repo:${var.github_repository}:environment:production",
+    "repo:${local.github_owner}@${data.github_user.owner[0].id}/${local.github_repo}@${data.github_repository.this[0].repo_id}:environment:production",
+  ]
+}
+
 data "aws_iam_policy_document" "github_assume" {
   count = local.github_enabled ? 1 : 0
   statement {
@@ -38,7 +58,7 @@ data "aws_iam_policy_document" "github_assume" {
     condition {
       test     = "StringEquals"
       variable = "token.actions.githubusercontent.com:sub"
-      values   = ["repo:${var.github_repository}:ref:refs/heads/main"]
+      values   = local.github_oidc_subjects
     }
   }
 }

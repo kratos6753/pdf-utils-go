@@ -57,8 +57,13 @@ make infra-bootstrap                           # once per AWS account (shared wi
 
 cp infra/aws-lean/terraform.tfvars.example infra/aws-lean/terraform.tfvars
 $EDITOR infra/aws-lean/terraform.tfvars        # domain, route53_zone, dockerhub_username, smtp_username…
-export TF_VAR_dockerhub_token=dckr_pat_...     # secrets via env, never in the file
-export TF_VAR_smtp_password=abcdabcdabcdabcd
+# Secrets go in a separate, gitignored file that Terraform loads automatically:
+cat > infra/aws-lean/secrets.auto.tfvars <<'TFVARS'
+dockerhub_token      = "dckr_pat_..."
+smtp_password        = "abcdabcdabcdabcd"
+google_client_secret = "GOCSPX-..."   # only if google_client_id is set
+TFVARS
+chmod 600 infra/aws-lean/secrets.auto.tfvars
 
 make infra-init  STACK=aws-lean
 make infra-apply STACK=aws-lean
