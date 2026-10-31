@@ -36,12 +36,14 @@ locals {
     ["JWT_SECRET", "POSTGRES_PASSWORD"],
     local.email_enabled ? ["SMTP_PASSWORD"] : [],
     nonsensitive(var.google_client_secret != "") ? ["GOOGLE_CLIENT_SECRET"] : [],
+    nonsensitive(var.admin_initial_password != "") ? ["ADMIN_INITIAL_PASSWORD"] : [],
   )
   env_secret = {
-    JWT_SECRET           = random_password.jwt.result
-    POSTGRES_PASSWORD    = random_password.postgres.result
-    SMTP_PASSWORD        = var.smtp_password
-    GOOGLE_CLIENT_SECRET = var.google_client_secret
+    JWT_SECRET             = random_password.jwt.result
+    POSTGRES_PASSWORD      = random_password.postgres.result
+    SMTP_PASSWORD          = var.smtp_password
+    GOOGLE_CLIENT_SECRET   = var.google_client_secret
+    ADMIN_INITIAL_PASSWORD = var.admin_initial_password
   }
 
   env_hash = sha256(jsonencode([

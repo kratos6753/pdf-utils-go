@@ -64,45 +64,53 @@ func (s *Server) Handler() http.Handler {
 	r.Get("/readyz", s.ready)
 
 	r.Route("/v1", func(r chi.Router) {
-		r.Use(s.identify, s.requestLimit)
-
-		r.Get("/config", s.clientConfig)
-		r.Get("/tools", s.listTools)
-		r.Get("/dl/{token}", s.downloadByLink)
-
-		r.Post("/uploads", s.upload)
-		r.Get("/files/{id}", s.getFile)
-		r.Get("/files/{id}/link", s.fileLink)
-		r.Delete("/files/{id}", s.deleteFile)
-
-		r.Post("/tasks/{tool}", s.createTask)
-		r.Get("/jobs/{id}", s.getJob)
-
-		r.Route("/auth", func(r chi.Router) {
-			r.Use(s.authLimit)
-			r.Post("/signup", s.signup)
-			r.Post("/login", s.login)
-			r.Post("/refresh", s.refresh)
-			r.Post("/logout", s.logout)
-			r.Post("/verify-email", s.verifyEmail)
-			r.Post("/forgot-password", s.forgotPassword)
-			r.Post("/reset-password", s.resetPassword)
-			r.Get("/google/start", s.googleStart)
-			r.Get("/google/callback", s.googleCallback)
-			r.Post("/google/token", s.googleToken)
-		})
-
-		r.Get("/me", s.me) // works for anonymous clients too (returns limits)
+		r.Route("/admin", s.adminRoutes)
 		r.Group(func(r chi.Router) {
-			r.Use(requireUser)
-			r.Patch("/me", s.updateMe)
-			r.Delete("/me", s.deleteMe)
-			r.Post("/me/password", s.changePassword)
-			r.Post("/me/resend-verification", s.resendVerification)
-			r.Get("/me/files", s.listMyFiles)
+			r.Use(s.identify, s.requestLimit)
+			s.appRoutes(r)
 		})
 	})
 	return r
+}
+
+// appRoutes are the endpoints used by the web and mobile apps.
+func (s *Server) appRoutes(r chi.Router) {
+	r.Get("/config", s.clientConfig)
+	r.Get("/tools", s.listTools)
+	r.Get("/dl/{token}", s.downloadByLink)
+
+	r.Post("/uploads", s.upload)
+	r.Get("/files/{id}", s.getFile)
+	r.Get("/files/{id}/link", s.fileLink)
+	r.Delete("/files/{id}", s.deleteFile)
+
+	r.Post("/tasks/{tool}", s.createTask)
+	r.Get("/jobs/{id}", s.getJob)
+
+	r.Route("/auth", func(r chi.Router) {
+		r.Use(s.authLimit)
+		r.Post("/signup", s.signup)
+		r.Post("/login", s.login)
+		r.Post("/refresh", s.refresh)
+		r.Post("/logout", s.logout)
+		r.Post("/verify-email", s.verifyEmail)
+		r.Post("/forgot-password", s.forgotPassword)
+		r.Post("/reset-password", s.resetPassword)
+		r.Get("/google/start", s.googleStart)
+		r.Get("/google/callback", s.googleCallback)
+		r.Post("/google/token", s.googleToken)
+	})
+
+	r.Get("/me", s.me) // works for anonymous clients too (returns limits)
+	r.Group(func(r chi.Router) {
+		r.Use(requireUser)
+		r.Patch("/me", s.updateMe)
+		r.Delete("/me", s.deleteMe)
+		r.Post("/me/password", s.changePassword)
+		r.Post("/me/resend-verification", s.resendVerification)
+		r.Get("/me/files", s.listMyFiles)
+	})
+	r.Post("/feedback", s.createFeedback)
 }
 
 func (s *Server) ready(w http.ResponseWriter, r *http.Request) {

@@ -112,6 +112,46 @@ code=$(curl -s -o /dev/null -w '%{http_code}' -H 'Content-Type: application/json
 code=$(curl -s -o /dev/null -w '%{http_code}' -X DELETE "${H[@]}" "$API/v1/me")
 [[ $code == 204 ]] && ok "delete account" || bad "delete account got $code"
 
+echo "Contact form & admin"
+MARKER="e2e feedback $DEVICE"
+J=(-H 'Content-Type: application/json')
+code=$(curl -s -o /dev/null -w '%{http_code}' "${H[@]}" "${J[@]}" -d "{\"email\":\"e2e@example.com\",\"topic\":\"bug\",\"message\":\"$MARKER\"}" "$API/v1/feedback")
+[[ $code == 201 ]] && ok "send feedback" || bad "feedback got $code"
+code=$(curl -s -o /dev/null -w '%{http_code}' "${H[@]}" "${J[@]}" -d '{"email":"nope","message":"too short"}' "$API/v1/feedback")
+[[ $code == 422 ]] && ok "invalid feedback → 422" || bad "invalid feedback got $code"
+code=$(curl -s -o /dev/null -w '%{http_code}' "${J[@]}" -d '{"email":"x","password":"y"}' "$API/v1/admin/login")
+[[ $code == 401 ]] && ok "bad admin login → 401" || bad "bad admin login got $code"
+ADMIN_EMAIL=${ADMIN_EMAIL:-chiruthedeveloper@gmail.com}
+ADMIN_PASSWORD=${ADMIN_PASSWORD:-Welcome123!}
+login=$(curl -s "${J[@]}" -d "$(jq -nc --arg e "$ADMIN_EMAIL" --arg p "$ADMIN_PASSWORD" '{email:$e,password:$p}')" "$API/v1/admin/login")
+ATOK=$(jq -r '.access_token // empty' <<<"$login")
+if [[ -z $ATOK ]]; then
+  echo "  - admin checks skipped: initial admin password already changed (set ADMIN_PASSWORD to run them)"
+else
+  ok "admin login"
+  A=(-H "Authorization: Bearer $ATOK")
+  code=$(curl -s -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $ACCESS" "$API/v1/admin/feedback")
+  [[ $code == 401 ]] && ok "user token rejected by admin API" || bad "user token on admin API got $code"
+  if [[ $(jq -r .admin.must_change_password <<<"$login") == true ]]; then
+    code=$(curl -s -o /dev/null -w '%{http_code}' "${A[@]}" "$API/v1/admin/feedback")
+    [[ $code == 403 ]] && ok "inbox blocked until password change" || bad "inbox before change got $code"
+    NEWPW="e2e-admin-$RANDOM-$RANDOM-pass"
+    code=$(curl -s -o /dev/null -w '%{http_code}' "${A[@]}" "${J[@]}" -d "{\"current_password\":\"$ADMIN_PASSWORD\",\"new_password\":\"short\"}" "$API/v1/admin/password")
+    [[ $code == 422 ]] && ok "weak admin password → 422" || bad "weak admin password got $code"
+    changed=$(curl -sf "${A[@]}" "${J[@]}" -d "$(jq -nc --arg c "$ADMIN_PASSWORD" --arg n "$NEWPW" '{current_password:$c,new_password:$n}')" "$API/v1/admin/password")
+    [[ $(jq -r .admin.must_change_password <<<"$changed") == false ]] && ok "admin password changed" || bad "admin password change"
+    code=$(curl -s -o /dev/null -w '%{http_code}' "${A[@]}" "$API/v1/admin/me")
+    [[ $code == 401 ]] && ok "old admin token revoked" || bad "old admin token got $code"
+    A=(-H "Authorization: Bearer $(jq -r .access_token <<<"$changed")")
+    echo "  (admin password is now $NEWPW)"
+  fi
+  inbox=$(curl -sf "${A[@]}" "$API/v1/admin/feedback?unread=1&limit=100")
+  FID=$(jq -r --arg m "$MARKER" '.feedback[] | select(.message == $m) | .id' <<<"$inbox")
+  [[ -n $FID ]] && ok "feedback in admin inbox" || bad "feedback missing from inbox"
+  read_at=$(curl -sf "${A[@]}" "${J[@]}" -X PATCH -d '{"read":true}' "$API/v1/admin/feedback/$FID" | jq -r .read_at)
+  [[ $read_at != null && -n $read_at ]] && ok "mark feedback read" || bad "mark read"
+fi
+
 echo
 echo "passed: $pass  failed: $fail"
 [[ $fail == 0 ]]

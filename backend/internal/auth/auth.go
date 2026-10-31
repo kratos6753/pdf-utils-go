@@ -63,6 +63,47 @@ func (t *Tokens) ParseAccess(s string) (uuid.UUID, string, error) {
 	return id, c.Plan, nil
 }
 
+// AdminTTL is how long an admin session lasts; there is no refresh, admins sign in again.
+const AdminTTL = 8 * time.Hour
+
+// AdminClaims are carried in admin tokens. PasswordVersion pins the token to the
+// password it was issued under, so changing the password signs out old sessions.
+type AdminClaims struct {
+	PasswordVersion int64 `json:"pv"`
+	jwt.RegisteredClaims
+}
+
+// IssueAdmin returns an admin token. Its audience differs from user access
+// tokens, so neither kind is accepted in place of the other.
+func (t *Tokens) IssueAdmin(adminID uuid.UUID, passwordVersion int64) (string, time.Time, error) {
+	exp := time.Now().Add(AdminTTL)
+	tok := jwt.NewWithClaims(jwt.SigningMethodHS256, AdminClaims{
+		PasswordVersion: passwordVersion,
+		RegisteredClaims: jwt.RegisteredClaims{
+			Subject:   adminID.String(),
+			Audience:  jwt.ClaimStrings{"admin"},
+			IssuedAt:  jwt.NewNumericDate(time.Now()),
+			ExpiresAt: jwt.NewNumericDate(exp),
+		},
+	})
+	s, err := tok.SignedString(t.secret)
+	return s, exp, err
+}
+
+func (t *Tokens) ParseAdmin(s string) (uuid.UUID, int64, error) {
+	var c AdminClaims
+	_, err := jwt.ParseWithClaims(s, &c, func(*jwt.Token) (any, error) { return t.secret, nil },
+		jwt.WithValidMethods([]string{"HS256"}), jwt.WithAudience("admin"), jwt.WithExpirationRequired())
+	if err != nil {
+		return uuid.Nil, 0, ErrInvalidToken
+	}
+	id, err := uuid.Parse(c.Subject)
+	if err != nil {
+		return uuid.Nil, 0, ErrInvalidToken
+	}
+	return id, c.PasswordVersion, nil
+}
+
 // HMAC returns a keyed hash of s, used for anonymous ids and signed links.
 func (t *Tokens) HMAC(s string) string {
 	m := hmac.New(sha256.New, t.secret)

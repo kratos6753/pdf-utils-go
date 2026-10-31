@@ -224,7 +224,18 @@ function Footer() {
         ))}
       </div>
       <div className="border-t border-line py-5 text-center text-xs text-muted">
-        © {YEAR} {APP_NAME}. Files are encrypted in transit and deleted automatically.
+        © {YEAR} {APP_NAME}. Files are encrypted in transit and deleted automatically. ·{' '}
+        <Link to="/contact" className="hover:text-fg">
+          Contact
+        </Link>{' '}
+        ·{' '}
+        <Link to="/privacy" className="hover:text-fg">
+          Privacy
+        </Link>{' '}
+        ·{' '}
+        <Link to="/delete-account" className="hover:text-fg">
+          Delete your account
+        </Link>
       </div>
     </footer>
   )

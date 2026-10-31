@@ -59,3 +59,25 @@ func TestPassword(t *testing.T) {
 		t.Fatal("password check broken")
 	}
 }
+
+func TestAdminTokenAudience(t *testing.T) {
+	tk := NewTokens("secret", time.Minute)
+	id := uuid.New()
+	admin, _, err := tk.IssueAdmin(id, 42)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, pv, err := tk.ParseAdmin(admin); err != nil || got != id || pv != 42 {
+		t.Fatalf("parse admin = %v %d %v", got, pv, err)
+	}
+	if _, _, err := tk.ParseAccess(admin); err == nil {
+		t.Fatal("admin token accepted as a user access token")
+	}
+	user, _, _ := tk.IssueAccess(id, "free")
+	if _, _, err := tk.ParseAdmin(user); err == nil {
+		t.Fatal("user access token accepted as an admin token")
+	}
+	if _, _, err := NewTokens("other", time.Minute).ParseAdmin(admin); err == nil {
+		t.Fatal("admin token verified with the wrong secret")
+	}
+}

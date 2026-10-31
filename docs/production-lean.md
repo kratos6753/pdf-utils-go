@@ -62,6 +62,7 @@ cat > infra/aws-lean/secrets.auto.tfvars <<'TFVARS'
 dockerhub_token      = "dckr_pat_..."
 smtp_password        = "abcdabcdabcdabcd"
 google_client_secret = "GOCSPX-..."   # only if google_client_id is set
+admin_initial_password = "..."       # first /admin password; set it before the first deploy
 TFVARS
 chmod 600 infra/aws-lean/secrets.auto.tfvars
 
@@ -84,6 +85,10 @@ All other commands take the same `STACK=aws-lean` switch:
 Tip: put `STACK ?= aws-lean` at the top of the Makefile (or `export STACK=aws-lean` in your shell) if this is the only stack you use.
 
 **CI/CD:** set `github_repository` and every push to `main` builds, pushes to Docker Hub and deploys. Terraform writes the repo variables and the `DOCKERHUB_TOKEN` secret.
+
+**Admin portal:** `https://<domain>/admin` shows the Contact us messages.
+- **First admin:** the API creates the first admin (`chiruthedeveloper@gmail.com`, from `ADMIN_EMAIL`) when none exists. Its initial password is `admin_initial_password`. If that isn't set, the public default `Welcome123!` from the code is used, so in that case sign in right after the deploy.
+- **First sign-in:** you must choose a new password of at least 12 characters before anything else works. After that, changing the variable has no effect, because the account already exists.
 
 ## Backups (read this)
 

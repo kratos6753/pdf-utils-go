@@ -46,11 +46,19 @@ type Config struct {
 	SMTPPass string
 	MailFrom string
 
+	// The first admin, created when none exists; the password must be changed on first login.
+	AdminEmail           string
+	AdminInitialPassword string
+
 	AnonRetention   time.Duration // how long anonymous files live
 	JobTimeout      time.Duration
 	WorkConcurrency int
 	TrustProxy      bool // honor X-Forwarded-For (behind Caddy)
 }
+
+// DefaultAdminPassword seeds the first admin unless ADMIN_INITIAL_PASSWORD is set.
+// It is public (this repo is), so it only works until the first login changes it.
+const DefaultAdminPassword = "Welcome123!"
 
 func Load() (*Config, error) {
 	c := &Config{
@@ -79,6 +87,8 @@ func Load() (*Config, error) {
 		SMTPUser:              get("SMTP_USER", ""),
 		SMTPPass:              get("SMTP_PASSWORD", ""),
 		MailFrom:              get("MAIL_FROM", "PDF Utils <no-reply@localhost>"),
+		AdminEmail:            get("ADMIN_EMAIL", "chiruthedeveloper@gmail.com"),
+		AdminInitialPassword:  get("ADMIN_INITIAL_PASSWORD", DefaultAdminPassword),
 		AnonRetention:         getDuration("ANON_RETENTION", 2*time.Hour),
 		JobTimeout:            getDuration("JOB_TIMEOUT", 5*time.Minute),
 		WorkConcurrency:       getInt("WORKER_CONCURRENCY", 4),

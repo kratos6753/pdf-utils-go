@@ -121,7 +121,7 @@ function baseHeaders(): Record<string, string> {
   return h
 }
 
-async function toError(res: Response): Promise<ApiError> {
+export async function toError(res: Response): Promise<ApiError> {
   try {
     const body = await res.json()
     const e = body?.error ?? {}

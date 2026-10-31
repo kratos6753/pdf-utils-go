@@ -11,6 +11,10 @@ import Home from './pages/Home'
 const ToolPage = lazy(() => import('./pages/ToolPage'))
 const History = lazy(() => import('./pages/History'))
 const Account = lazy(() => import('./pages/Account'))
+const DeleteAccount = lazy(() => import('./pages/DeleteAccount'))
+const Privacy = lazy(() => import('./pages/Privacy'))
+const Contact = lazy(() => import('./pages/Contact'))
+const Admin = lazy(() => import('./pages/admin/Admin'))
 import { AuthCallback, ForgotPassword, Login, ResetPassword, Signup, VerifyEmail } from './pages/Auth'
 
 const queryClient = new QueryClient({
@@ -76,6 +80,10 @@ export default function App() {
               <Route path="auth/callback" element={<AuthCallback />} />
               <Route path="history" element={<RequireUser><History /></RequireUser>} />
               <Route path="account" element={<RequireUser><Account /></RequireUser>} />
+              <Route path="delete-account" element={<Suspense fallback={spinner}><DeleteAccount /></Suspense>} />
+              <Route path="privacy" element={<Suspense fallback={spinner}><Privacy /></Suspense>} />
+              <Route path="contact" element={<Suspense fallback={spinner}><Contact /></Suspense>} />
+              <Route path="admin" element={<Suspense fallback={spinner}><Admin /></Suspense>} />
               <Route path=":slug" element={<ToolRoute />} />
               <Route path="*" element={<NotFound />} />
             </Route>

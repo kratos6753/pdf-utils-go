@@ -30,10 +30,11 @@ locals {
     GOOGLE_MOBILE_CLIENT_IDS = join(",", var.google_mobile_client_ids)
   }
   env_secret = {
-    JWT_SECRET           = random_password.jwt.result
-    POSTGRES_PASSWORD    = random_password.postgres.result
-    SMTP_PASSWORD        = aws_iam_access_key.ses_smtp.ses_smtp_password_v4
-    GOOGLE_CLIENT_SECRET = var.google_client_secret
+    JWT_SECRET             = random_password.jwt.result
+    POSTGRES_PASSWORD      = random_password.postgres.result
+    SMTP_PASSWORD          = aws_iam_access_key.ses_smtp.ses_smtp_password_v4
+    GOOGLE_CLIENT_SECRET   = var.google_client_secret
+    ADMIN_INITIAL_PASSWORD = var.admin_initial_password
   }
   # SSM rejects empty values, so optional settings are only stored when set.
   env_plain_keys = concat(
@@ -44,6 +45,7 @@ locals {
   env_secret_keys = concat(
     ["JWT_SECRET", "POSTGRES_PASSWORD", "SMTP_PASSWORD"],
     nonsensitive(var.google_client_secret != "") ? ["GOOGLE_CLIENT_SECRET"] : [], # whether it is set is not secret
+    nonsensitive(var.admin_initial_password != "") ? ["ADMIN_INITIAL_PASSWORD"] : [],
   )
 
   # Redeploy whenever any setting changes.

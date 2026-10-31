@@ -77,6 +77,10 @@ func (s *Store) UpdateProfile(ctx context.Context, id uuid.UUID, name string) er
 }
 
 func (s *Store) DeleteUser(ctx context.Context, id uuid.UUID) error {
+	// usage_daily is keyed by subject, not a foreign key, so it doesn't cascade.
+	if _, err := s.db.Exec(ctx, `DELETE FROM usage_daily WHERE subject = $1`, Owner{UserID: &id}.Subject()); err != nil {
+		return err
+	}
 	_, err := s.db.Exec(ctx, `DELETE FROM users WHERE id = $1`, id)
 	return err
 }

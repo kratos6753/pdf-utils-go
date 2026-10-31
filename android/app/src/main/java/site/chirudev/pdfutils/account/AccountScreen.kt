@@ -39,6 +39,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextAlign
@@ -110,6 +111,11 @@ fun AccountScreen(contentPadding: PaddingValues, snackbar: SnackbarHostState, on
                 Icon(Icons.AutoMirrored.Rounded.Logout, null, Modifier.size(18.dp)); Spacer(Modifier.size(8.dp)); Text("Sign out")
             }
             DeleteCard(state.busy == AccountAction.Delete, vm::deleteAccount)
+        }
+        val uriHandler = LocalUriHandler.current
+        Row(Modifier.align(Alignment.CenterHorizontally)) {
+            TextButton(onClick = { uriHandler.openUri(BuildConfig.API_BASE_URL + "contact") }) { Text("Contact us") }
+            TextButton(onClick = { uriHandler.openUri(BuildConfig.API_BASE_URL + "privacy") }) { Text("Privacy policy") }
         }
         Text(
             "PDF Utils ${BuildConfig.VERSION_NAME} · chirudev.site",

@@ -32,6 +32,8 @@ tags:
   - name: Tasks
   - name: Auth
   - name: Account
+  - name: Admin
+    description: Operator portal. Admin tokens come from /v1/admin/login and are not valid on app endpoints (nor app tokens here).
 
 paths:
   /v1/config:
@@ -419,9 +421,143 @@ paths:
                   files: { type: array, items: { $ref: "#/components/schemas/File" } }
                   next_cursor: { type: [string, "null"] }
 
+  /v1/feedback:
+    post:
+      tags: [Account]
+      summary: Send a Contact us message
+      description: Works signed in or not. Limited to 5 messages per hour per IP.
+      operationId: createFeedback
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, message]
+              properties:
+                name: { type: string, maxLength: 100 }
+                email: { type: string, format: email }
+                topic: { type: string, enum: [feedback, bug, question, other], default: feedback }
+                message: { type: string, minLength: 10, maxLength: 5000 }
+                website: { type: string, description: "Honeypot: leave empty." }
+      responses:
+        "201": { description: Received }
+        "422": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
+
+  /v1/admin/login:
+    post:
+      tags: [Admin]
+      summary: Sign in to the admin portal
+      operationId: adminLogin
+      security: [{}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: { type: string }
+                password: { type: string }
+      responses:
+        "200": { $ref: "#/components/responses/AdminSession" }
+        "401": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
+
+  /v1/admin/me:
+    get:
+      tags: [Admin]
+      summary: The signed-in admin
+      operationId: adminMe
+      security: [{ adminBearer: [] }]
+      responses:
+        "200":
+          description: Admin
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  admin: { $ref: "#/components/schemas/Admin" }
+        "401": { $ref: "#/components/responses/Error" }
+
+  /v1/admin/password:
+    post:
+      tags: [Admin]
+      summary: Change the admin password (required after the first sign-in)
+      description: Signs out every other admin session and returns a new token.
+      operationId: adminChangePassword
+      security: [{ adminBearer: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [current_password, new_password]
+              properties:
+                current_password: { type: string }
+                new_password: { type: string, minLength: 12, description: "Max 72 bytes; must differ from the current and initial password." }
+      responses:
+        "200": { $ref: "#/components/responses/AdminSession" }
+        "403": { $ref: "#/components/responses/Error" }
+        "422": { $ref: "#/components/responses/Error" }
+
+  /v1/admin/feedback:
+    get:
+      tags: [Admin]
+      summary: Contact us messages (newest first)
+      description: Returns `403 password_change_required` until the initial password is changed.
+      operationId: adminListFeedback
+      security: [{ adminBearer: [] }]
+      parameters:
+        - { name: unread, in: query, schema: { type: string, enum: ["1"] }, description: Only unread messages }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 30 } }
+        - { name: cursor, in: query, schema: { type: string }, description: "`next_cursor` from the previous page" }
+      responses:
+        "200":
+          description: Page of messages
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [feedback, next_cursor, unread]
+                properties:
+                  feedback: { type: array, items: { $ref: "#/components/schemas/Feedback" } }
+                  next_cursor: { type: [string, "null"] }
+                  unread: { type: integer, description: Total unread messages }
+        "403": { $ref: "#/components/responses/Error" }
+
+  /v1/admin/feedback/{id}:
+    patch:
+      tags: [Admin]
+      summary: Mark a message read or unread
+      operationId: adminSetFeedbackRead
+      security: [{ adminBearer: [] }]
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [read]
+              properties:
+                read: { type: boolean }
+      responses:
+        "200":
+          description: Updated message
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Feedback" }
+        "404": { $ref: "#/components/responses/Error" }
+
 components:
   securitySchemes:
     bearer: { type: http, scheme: bearer, bearerFormat: JWT }
+    adminBearer: { type: http, scheme: bearer, bearerFormat: JWT, description: Admin token from /v1/admin/login }
 
   parameters:
     Id:
@@ -446,6 +582,17 @@ components:
       content:
         application/json:
           schema: { $ref: "#/components/schemas/Session" }
+    AdminSession:
+      description: Admin signed in
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [access_token, expires_at, admin]
+            properties:
+              access_token: { type: string, description: Valid for 8 hours; there is no refresh token. }
+              expires_at: { type: string, format: date-time }
+              admin: { $ref: "#/components/schemas/Admin" }
 
   schemas:
     Error:
@@ -666,3 +813,23 @@ components:
       additionalProperties: false
       properties:
         password: { type: string, maxLength: 128 }
+    Admin:
+      type: object
+      required: [email, must_change_password]
+      properties:
+        email: { type: string }
+        must_change_password: { type: boolean, description: "When true, only /v1/admin/me and /v1/admin/password work." }
+        last_login_at: { type: [string, "null"], format: date-time }
+    Feedback:
+      type: object
+      required: [id, email, topic, message, client, created_at]
+      properties:
+        id: { type: string, format: uuid }
+        user_id: { type: [string, "null"], format: uuid, description: Set when the sender was signed in }
+        name: { type: string }
+        email: { type: string }
+        topic: { type: string, enum: [feedback, bug, question, other] }
+        message: { type: string }
+        client: { type: string, description: "X-Client-Type of the sender: web, android, …" }
+        created_at: { type: string, format: date-time }
+        read_at: { type: [string, "null"], format: date-time }

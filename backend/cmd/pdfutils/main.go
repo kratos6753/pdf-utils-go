@@ -19,6 +19,7 @@ import (
 	"github.com/redis/go-redis/v9"
 
 	"pdfutils/internal/api"
+	"pdfutils/internal/auth"
 	"pdfutils/internal/config"
 	"pdfutils/internal/queue"
 	"pdfutils/internal/service"
@@ -64,6 +65,9 @@ func run(ctx context.Context, cmd string, cfg *config.Config) error {
 		}
 		if cmd == "migrate" {
 			return nil
+		}
+		if err := seedAdmin(ctx, st, cfg); err != nil {
+			return fmt.Errorf("seed admin: %w", err)
 		}
 	}
 
@@ -113,4 +117,26 @@ func run(ctx context.Context, cmd string, cfg *config.Config) error {
 		return nil
 	}
 	return fmt.Errorf("unknown command %q", cmd)
+}
+
+// seedAdmin creates the first admin account if there is none. The password
+// must be changed on first login, after which the initial one stops working.
+func seedAdmin(ctx context.Context, st *store.Store, cfg *config.Config) error {
+	exists, err := st.HasAdmin(ctx)
+	if err != nil || exists {
+		return err
+	}
+	hash, err := auth.HashPassword(cfg.AdminInitialPassword)
+	if err != nil {
+		return err
+	}
+	if err := st.EnsureAdmin(ctx, cfg.AdminEmail, hash); err != nil {
+		return err
+	}
+	if cfg.AdminInitialPassword == config.DefaultAdminPassword {
+		slog.Warn("created admin with the default password; sign in at /admin and change it now", "email", cfg.AdminEmail)
+	} else {
+		slog.Info("created admin", "email", cfg.AdminEmail)
+	}
+	return nil
 }

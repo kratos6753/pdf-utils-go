@@ -61,6 +61,9 @@ To add a paid tier, insert a row into `plans` and set `users.plan`. No code chan
   - Access tokens are 15-minute JWTs.
   - Refresh tokens rotate on every use, and reusing an old one revokes every session.
   - Web keeps the refresh token in an httpOnly SameSite=Strict cookie; mobile gets it in the JSON response.
+- **Admin portal (`/admin`):** separate admin accounts with their own token audience (8-hour sessions, no refresh). It currently lists Contact us messages.
+  - **First admin:** created at startup from `ADMIN_EMAIL` / `ADMIN_INITIAL_PASSWORD`.
+  - **First sign-in:** the admin must change the password.
 
 ## Building the mobile apps
 

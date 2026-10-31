@@ -132,6 +132,13 @@ variable "google_client_secret" {
   sensitive = true
 }
 
+variable "admin_initial_password" {
+  description = "Password for the first /admin account (changed on first sign-in). Empty uses the public default from the code, so set it before the first deploy."
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
 variable "google_mobile_client_ids" {
   type    = list(string)
   default = []
