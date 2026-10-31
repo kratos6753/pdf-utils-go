@@ -15,6 +15,8 @@ val keystoreFile = System.getenv("PDFUTILS_KEYSTORE_FILE")?.let(::file)?.takeIf 
 android {
     namespace = "site.chirudev.pdfutils"
     compileSdk = 37
+    // Only used to extract native symbol tables for the release bundle; CI installs this version.
+    ndkVersion = "28.2.13676358"
 
     defaultConfig {
         applicationId = "site.chirudev.pdfutils"
@@ -46,6 +48,9 @@ android {
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
             // Without a keystore (PRs, forks, local) the release build is debug-signed so it still installs.
             signingConfig = signingConfigs.findByName("release") ?: signingConfigs.getByName("debug")
+            // The app has no native code of its own, but AndroidX ships small .so files. Packing their
+            // symbol tables into the bundle lets Play symbolicate native crashes (and stops its warning).
+            ndk { debugSymbolLevel = "SYMBOL_TABLE" }
         }
         debug {
             applicationIdSuffix = ".debug"

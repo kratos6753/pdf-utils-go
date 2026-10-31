@@ -7,7 +7,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -53,6 +52,7 @@ import site.chirudev.pdfutils.ui.components.PrimaryButton
 import site.chirudev.pdfutils.ui.components.SurfaceCard
 import site.chirudev.pdfutils.ui.components.formatBytes
 import site.chirudev.pdfutils.ui.components.formatTime
+import site.chirudev.pdfutils.ui.components.readableWidth
 import site.chirudev.pdfutils.ui.theme.AppTheme
 
 @Composable
@@ -62,7 +62,7 @@ fun AccountScreen(contentPadding: PaddingValues, snackbar: SnackbarHostState, on
     LaunchedEffect(vm) { vm.messages.collect { snackbar.showSnackbar(it) } }
 
     Column(
-        Modifier.fillMaxSize().verticalScroll(rememberScrollState())
+        Modifier.readableWidth().verticalScroll(rememberScrollState())
             .padding(top = contentPadding.calculateTopPadding(), bottom = contentPadding.calculateBottomPadding())
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),

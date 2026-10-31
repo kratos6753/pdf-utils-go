@@ -11,10 +11,13 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.ErrorOutline
 import androidx.compose.material3.Button
@@ -33,6 +36,13 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 
 /** Card on the white "surface" color with the web's hairline border. */
+/** Widest that content gets on tablets and foldables; beyond this lines get hard to read. */
+val MaxContentWidth = 720.dp
+
+/** Fills the screen on phones; on wide screens centers the content at [MaxContentWidth]. */
+fun Modifier.readableWidth(fillHeight: Boolean = true): Modifier =
+    (if (fillHeight) fillMaxSize() else fillMaxWidth()).wrapContentWidth(Alignment.CenterHorizontally).widthIn(max = MaxContentWidth)
+
 @Composable
 fun SurfaceCard(modifier: Modifier = Modifier, onClick: (() -> Unit)? = null, content: @Composable ColumnScope.() -> Unit) {
     val colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)

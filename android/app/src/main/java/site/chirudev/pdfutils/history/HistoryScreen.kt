@@ -66,6 +66,7 @@ import site.chirudev.pdfutils.ui.components.SurfaceCard
 import site.chirudev.pdfutils.ui.components.ToolIcon
 import site.chirudev.pdfutils.ui.components.formatBytes
 import site.chirudev.pdfutils.ui.components.formatDateTime
+import site.chirudev.pdfutils.ui.components.readableWidth
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -89,7 +90,7 @@ fun HistoryScreen(
         }
     }
 
-    Column(Modifier.fillMaxSize().padding(top = contentPadding.calculateTopPadding())) {
+    Column(Modifier.readableWidth().padding(top = contentPadding.calculateTopPadding())) {
         Text("History", style = MaterialTheme.typography.headlineMedium, modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 8.dp))
         if (!state.signedIn) {
             EmptyState(

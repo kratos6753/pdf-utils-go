@@ -66,6 +66,7 @@ import site.chirudev.pdfutils.core.files.CreateTypedDocument
 import site.chirudev.pdfutils.ui.components.ErrorBanner
 import site.chirudev.pdfutils.ui.components.LimitSheet
 import site.chirudev.pdfutils.ui.components.PrimaryButton
+import site.chirudev.pdfutils.ui.components.readableWidth
 import site.chirudev.pdfutils.ui.components.ToolIcon
 import site.chirudev.pdfutils.ui.theme.AppTheme
 
@@ -128,7 +129,7 @@ fun ToolScreen(nav: ToolNav, vm: ToolViewModel = hiltViewModel()) {
         bottomBar = {
             if (state.phase == Phase.Editing && state.files.isNotEmpty()) {
                 Surface(tonalElevation = 3.dp, shadowElevation = 8.dp, color = MaterialTheme.colorScheme.surfaceContainerLow) {
-                    Column(Modifier.windowInsetsPadding(WindowInsets.navigationBars.union(WindowInsets.ime)).padding(16.dp)) {
+                    Column(Modifier.windowInsetsPadding(WindowInsets.navigationBars.union(WindowInsets.ime)).readableWidth(fillHeight = false).padding(16.dp)) {
                         val waiting = state.files.count { it.uploading }
                         PrimaryButton(
                             text = if (waiting > 0) "Uploading $waiting file${if (waiting > 1) "s" else ""}…" else tool.verb,
@@ -146,7 +147,7 @@ fun ToolScreen(nav: ToolNav, vm: ToolViewModel = hiltViewModel()) {
             targetState = state.phase::class,
             transitionSpec = { fadeIn() togetherWith fadeOut() },
             label = "phase",
-            modifier = Modifier.padding(padding).fillMaxSize(),
+            modifier = Modifier.padding(padding).readableWidth(),
         ) { phase ->
             when (phase) {
                 Phase.Editing::class -> EditingContent(state, vm, pickFiles, pickPhotos)

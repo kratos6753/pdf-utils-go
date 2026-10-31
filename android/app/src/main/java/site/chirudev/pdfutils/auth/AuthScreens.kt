@@ -44,6 +44,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.autofill.ContentType
 import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.platform.LocalContext
@@ -158,7 +159,13 @@ fun LoginScreen(onBack: () -> Unit, onDone: () -> Unit, onSignup: () -> Unit, on
     val state by vm.state.collectAsStateWithLifecycle()
     var email by rememberSaveable { mutableStateOf("") }
     var password by rememberSaveable { mutableStateOf("") }
-    LaunchedEffect(state.done) { if (state.done) onDone() }
+    val keyboard = LocalSoftwareKeyboardController.current
+    LaunchedEffect(state.done) {
+        if (state.done) {
+            keyboard?.hide() // focus can stay in the password field after tapping the button
+            onDone()
+        }
+    }
 
     AuthScaffold("Welcome back", "Sign in to keep your files and get higher limits.", onBack) {
         EmailField(email, { email = it; vm.clearError() })
@@ -181,7 +188,13 @@ fun SignupScreen(onBack: () -> Unit, onDone: () -> Unit, onLogin: () -> Unit, vm
     var email by rememberSaveable { mutableStateOf("") }
     var password by rememberSaveable { mutableStateOf("") }
     val focus = LocalFocusManager.current
-    LaunchedEffect(state.done) { if (state.done) onDone() }
+    val keyboard = LocalSoftwareKeyboardController.current
+    LaunchedEffect(state.done) {
+        if (state.done) {
+            keyboard?.hide() // focus can stay in the password field after tapping the button
+            onDone()
+        }
+    }
 
     AuthScaffold("Create your account", "Free forever. Keep your history and process more files.", onBack) {
         OutlinedTextField(

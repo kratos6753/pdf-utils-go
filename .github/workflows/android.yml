@@ -51,6 +51,12 @@ jobs:
             echo "signed=false" >> "$GITHUB_OUTPUT"
           fi
 
+      # The release bundle carries native symbol tables for Play, which needs the NDK.
+      - name: Install the NDK
+        run: |
+          ndk=$(sed -n 's/^ *ndkVersion = "\(.*\)"/\1/p' app/build.gradle.kts)
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "ndk;$ndk" > /dev/null
+
       - name: Lint, test and build
         env:
           PDFUTILS_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
@@ -65,6 +71,10 @@ jobs:
 
       - name: Collect outputs
         run: |
+          if ! unzip -l app/build/outputs/bundle/release/app-release.aab | grep -q 'BUNDLE-METADATA/com.android.tools.build.debugsymbols/'; then
+            echo "::error::The bundle has no native debug symbols; Play will warn about them."
+            exit 1
+          fi
           mkdir -p "$RUNNER_TEMP/dist"
           cp app/build/outputs/apk/release/app-release.apk "$RUNNER_TEMP/dist/pdf-utils-${{ steps.version.outputs.name }}.apk"
           cp app/build/outputs/bundle/release/app-release.aab "$RUNNER_TEMP/dist/pdf-utils-${{ steps.version.outputs.name }}.aab"
